@@ -107,8 +107,8 @@ export default function Home() {
         <div className="flex items-center gap-3 px-4 py-2.5">
           <div className="flex items-center gap-2.5">
             <span className="inline-block h-5 w-5 bg-primary rounded-[3px]" aria-hidden="true" />
-            <h1 className="font-serif italic text-lg tracking-tight">
-              queryline
+            <h1 className="font-semibold text-lg tracking-tight text-foreground">
+              Queryline
             </h1>
           </div>
           <span className="text-[11px] font-mono text-muted-foreground hidden sm:inline">
