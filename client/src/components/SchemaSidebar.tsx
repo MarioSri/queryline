@@ -1,0 +1,82 @@
+/**
+ * Ledger Light — SQL Query Runner
+ * Left rail: schema browser. Table names with row counts and per-table
+ * column lists, mirroring a data catalog's object explorer (an intentional
+ * nod to the kind of product Atlan builds).
+ */
+
+import { TABLES, type TableMeta } from "@/lib/seed";
+import { Table2, ChevronDown } from "lucide-react";
+import { useState } from "react";
+
+interface Props {
+  counts: Record<string, number>;
+  onInsertTable: (sql: string) => void;
+  onLoadSample: (label: string, sql: string) => void;
+  samples: { label: string; sql: string }[];
+}
+
+export default function SchemaSidebar({ counts, onInsertTable, onLoadSample, samples }: Props) {
+  const [open, setOpen] = useState<Record<string, boolean>>({ orders: true });
+
+  const toggle = (name: string) => setOpen((s) => ({ ...s, [name]: !s[name] }));
+
+  return (
+    <aside className="w-64 shrink-0 border-r border-border/70 flex flex-col overflow-hidden bg-sidebar">
+      <div className="px-4 py-3 border-b border-border/60">
+        <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Schema</h2>
+      </div>
+      <div className="overflow-y-auto flex-1 py-2">
+        {TABLES.map((t: TableMeta) => (
+          <div key={t.name}>
+            <button
+              onClick={() => toggle(t.name)}
+              className="w-full flex items-center gap-2 px-4 py-2 text-left hover:bg-accent/50 transition-colors duration-150"
+              aria-expanded={!!open[t.name]}
+            >
+              <Table2 className="h-3.5 w-3.5 text-primary shrink-0" />
+              <span className="font-mono text-[13px] truncate">{t.name}</span>
+              <span className="ml-auto text-[11px] text-muted-foreground font-mono shrink-0">
+                {counts[t.name]?.toLocaleString("en-US") ?? "…"}
+              </span>
+              <ChevronDown
+                className={`h-3.5 w-3.5 text-muted-foreground transition-transform duration-150 ${open[t.name] ? "" : "-rotate-90"}`}
+              />
+            </button>
+            {open[t.name] && (
+              <div className="pl-10 pr-3 pb-2 space-y-0.5">
+                {t.columns.map((col) => (
+                  <button
+                    key={col}
+                    onClick={() => onInsertTable(`${t.name}.${col}`)}
+                    className="block w-full text-left font-mono text-[12px] text-muted-foreground hover:text-foreground py-0.5 transition-colors duration-100"
+                  >
+                    {col}
+                  </button>
+                ))}
+                <div className="pt-1 text-[11px] text-muted-foreground/70 leading-snug">{t.description}</div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="border-t border-border/60">
+        <div className="px-4 py-3">
+          <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Sample queries</h2>
+        </div>
+        <div className="overflow-y-auto max-h-48 pb-2 px-2 space-y-0.5">
+          {samples.map((s) => (
+            <button
+              key={s.label}
+              onClick={() => onLoadSample(s.label, s.sql)}
+              className="block w-full text-left text-[12px] px-2 py-1.5 rounded hover:bg-accent/60 transition-colors duration-150 truncate"
+              title={s.sql}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </aside>
+  );
+}
