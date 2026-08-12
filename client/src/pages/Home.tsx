@@ -106,7 +106,11 @@ export default function Home() {
       <header className="shrink-0 border-b border-border/70 bg-card/80 backdrop-blur-sm">
         <div className="flex items-center gap-3 px-4 py-2.5">
           <div className="flex items-center gap-2.5">
-            <span className="inline-block h-5 w-5 bg-primary rounded-[3px]" aria-hidden="true" />
+            <img
+              src="/manus-storage/queryline-logo_e1a45a25.png"
+              alt="Queryline logo"
+              className="h-6 w-6 rounded-[3px] object-contain"
+            />
             <h1 className="font-semibold text-lg tracking-tight text-foreground">
               Queryline
             </h1>
