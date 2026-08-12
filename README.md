@@ -1,10 +1,27 @@
-# SQL Query Runner
+# Queryline
 
-A browser-based SQL query runner. Type queries in the editor, hit Run, and see
-the results in a paginated table. Everything runs in the browser: the dataset
-is seeded at load time, and the queries are executed by a small hand-rolled
-SQL engine written in TypeScript. There is no server, no WebAssembly, and no
-SQL library.
+Queryline is a browser-based SQL console. Type queries in the editor, hit Run,
+and see results in a paginated table. Everything runs in the browser: the
+dataset is seeded at load time, and queries are executed by a small
+hand-rolled SQL engine written in TypeScript. There is no server, no
+WebAssembly, and no SQL library.
+
+## Features
+
+- **A real SQL engine.** `client/src/lib/engine.ts` is a tokenizer,
+  recursive-descent parser, and executor in roughly 1,200 lines of
+  TypeScript, with no runtime dependencies.
+- **A seeded relational dataset.** Five tables with realistic volumes:
+  2,000 customers, 400 products, 50,000 orders, ~150,000 order line items,
+  and ~18,000 reviews.
+- **Paginated results.** Only the active page is ever rendered, with a
+  sticky header and column sorting, so a 50,000-row result set pages like
+  a small one.
+- **A schema sidebar** with per-table row counts and clickable sample
+  queries, plus a **query history** rail that records every run with its
+  execution time and row count.
+- **Read-only by construction.** The parser has no INSERT/UPDATE/DELETE
+  production, so arbitrary SQL cannot mutate anything.
 
 Modeled on the kind of data-tooling product that companies like Atlan build:
 a query surface, a schema browser, instant feedback, and results that stay
@@ -17,13 +34,13 @@ fast even when a query returns tens of thousands of rows.
 - **Seeded dataset** loaded once into memory: 5 relational tables with
   realistic volumes:
 
-  | Table | Rows | Purpose |
-  |---|---|---|
-  | customers | 2,000 | customer demographics and segments |
-  | products | 400 | product catalog across categories |
-  | orders | 50,000 | five years of orders, the big table |
-  | order_items | 120,000 | line items that join into orders |
-  | reviews | 18,000 | ratings and review text |
+| Table | Rows | Purpose |
+|---|---|---|
+| customers | 2,000 | customer demographics and segments |
+| products | 400 | product catalog across categories |
+| orders | 50,000 | five years of orders, the big table |
+| order_items | ~150,000 | line items that join into orders |
+| reviews | ~18,000 | ratings and review text |
 
 - **Results table** with pagination (10/25/50 rows per page), a sticky
   header, and numeric alignment. Only the current page is ever rendered, so
@@ -126,9 +143,10 @@ pnpm dev        # starts Vite on http://localhost:3000
 pnpm build      # production build
 pnpm preview    # preview the production build
 pnpm check      # TypeScript typecheck
+pnpm test       # engine test suite (vitest)
 ```
 
-There are no environment variables and no backend to configure.
+There are no environment variables, no API keys, and no backend to configure.
 
 ## Project structure
 
@@ -144,11 +162,31 @@ client/src/
     └── HistoryRail.tsx    # recent runs, click to restore
 ```
 
-## What this is not
+## Scope and limitations
 
 It is not SQLite, not PostgreSQL, and not a replacement for either. There
 is no index maintenance, no query planner, no transactions, and no support
-for subqueries, CTEs, or window functions. The surface is deliberately
+for subqueries, CTEs, or window functions. Inline arithmetic inside
+aggregate arguments (such as `SUM(a*b)`) is also out of scope; sum a
+pre-computed column or a plain column instead. The surface is deliberately
 small and correct within itself: enough to explore a real relational
 dataset in the browser, and a concrete demonstration that the expensive
 part of a query console is never the SQL.
+
+## Security
+
+There are no secrets in this repository: no environment variables, no API
+keys, and no third-party credentials. The engine runs read-only SELECT
+statements against an in-memory dataset, so even an adversarial query
+cannot mutate data or reach a server. Static content is served from the
+built `dist/` output; nothing is posted to any external service.
+
+## Contributing
+
+Bug reports and improvements are welcome through issues and pull requests.
+For engine work, the test suite in `client/src/lib/engine.test.ts` is the
+regression contract; keep it green.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
