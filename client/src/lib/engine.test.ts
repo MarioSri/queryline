@@ -68,6 +68,14 @@ describe("sample queries (executeQuery)", () => {
     });
   });
 
+  it("expands wildcard projections into the underlying table columns", async () => {
+    const { columns, rows } = await executeQuery("SELECT * FROM orders ORDER BY id LIMIT 2");
+    expect(columns).toEqual(["id", "customer_id", "order_date", "status", "channel", "total"]);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toHaveLength(columns.length);
+    expect(rows[0][0]).toBe(1);
+  });
+
   it("joins customers to orders with correct group ordering", async () => {
     const { rows } = await executeQuery(SAMPLE_QUERIES[0].sql);
     expect(rows.length).toBe(10);

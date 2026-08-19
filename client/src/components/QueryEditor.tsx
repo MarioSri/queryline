@@ -57,7 +57,7 @@ export default function QueryEditor({ value, onChange, onRun, running }: Props) 
           Ctrl/Cmd + Enter to run · TAB indents
         </span>
         <button
-          onClick={onRun}
+          onClick={() => onRun()}
           disabled={running}
           className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-60 transition-all duration-150 active:scale-[0.97]"
         >

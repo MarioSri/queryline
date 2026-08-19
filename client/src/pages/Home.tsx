@@ -4,13 +4,13 @@
  * Editor and results share the center column with a resizable divider.
  */
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import QueryEditor from "@/components/QueryEditor";
 import ResultsTable from "@/components/ResultsTable";
 import SchemaSidebar from "@/components/SchemaSidebar";
 import HistoryRail from "@/components/HistoryRail";
 import { executeQuery, type QueryResult } from "@/lib/engine";
-import { SAMPLE_QUERIES } from "@/lib/seed";
+import { SAMPLE_QUERIES, TABLES } from "@/lib/seed";
 import { toast } from "sonner";
 import { AlertTriangle, Timer, Rows3, Loader2 } from "lucide-react";
 
@@ -84,13 +84,14 @@ export default function Home() {
     }
   }, [sql]);
 
-  // Open the console as a populated ledger: run the loaded sample once, on
-  // first mount, after the engine's seed data is ready. Only the active page
-  // renders, so this costs one 50-row paint.
-  if (!autoRunRef.current) {
+  // Open the console as a populated ledger once after mount. Running from an
+  // effect avoids state updates during render and keeps repeat editor actions
+  // isolated from the initial sample execution.
+  useEffect(() => {
+    if (autoRunRef.current) return;
     autoRunRef.current = true;
-    run();
-  }
+    void run(SAMPLE_QUERIES[1].sql);
+  }, [run]);
 
   const restore = useCallback((s: string) => setSql(s), []);
   const insertToken = useCallback((token: string) => setSql((s) => s + token), []);
@@ -135,16 +136,77 @@ export default function Home() {
       </header>
 
       {/* Body */}
-      <div className="flex flex-1 min-h-0">
-        <SchemaSidebar
-          counts={counts}
-          onInsertTable={insertToken}
-          onLoadSample={(label, s) => {
-            setSql(s);
-            toast(`Loaded: ${label}`);
-          }}
-          samples={SAMPLE_QUERIES}
-        />
+      <div className="flex flex-1 min-h-0 flex-col lg:flex-row">
+        <div className="lg:hidden shrink-0 border-b border-border/70 bg-sidebar">
+          <details className="group border-b border-border/50">
+            <summary className="cursor-pointer list-none px-4 py-2.5 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground marker:hidden">
+              <span className="flex items-center justify-between">
+                Schema & samples
+                <span className="text-xs transition-transform duration-150 group-open:rotate-180">⌄</span>
+              </span>
+            </summary>
+            <div className="flex gap-2 overflow-x-auto px-4 pb-3">
+              {TABLES.map((table) => (
+                <button
+                  key={table.name}
+                  onClick={() => insertToken(`${table.name}.`)}
+                  className="shrink-0 rounded border border-border px-2 py-1 font-mono text-[11px] text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground"
+                >
+                  {table.name} · {counts[table.name]?.toLocaleString("en-US") ?? "…"}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2 overflow-x-auto px-4 pb-3">
+              {SAMPLE_QUERIES.map((sample) => (
+                <button
+                  key={sample.label}
+                  onClick={() => {
+                    setSql(sample.sql);
+                    toast(`Loaded: ${sample.label}`);
+                  }}
+                  className="shrink-0 rounded border border-border px-2 py-1 text-[11px] text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground"
+                >
+                  {sample.label}
+                </button>
+              ))}
+            </div>
+          </details>
+          <details className="group">
+            <summary className="cursor-pointer list-none px-4 py-2.5 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground marker:hidden">
+              <span className="flex items-center justify-between">
+                History {history.length > 0 ? `(${history.length})` : ""}
+                <span className="text-xs transition-transform duration-150 group-open:rotate-180">⌄</span>
+              </span>
+            </summary>
+            <div className="max-h-36 overflow-y-auto px-4 pb-3">
+              {history.length === 0 ? (
+                <p className="text-[11px] text-muted-foreground">Your completed queries will appear here.</p>
+              ) : (
+                history.map((entry) => (
+                  <button
+                    key={entry.id}
+                    onClick={() => restore(entry.sql)}
+                    className="block w-full border-b border-border/40 py-2 text-left font-mono text-[11px] text-foreground/90 last:border-0"
+                  >
+                    {entry.sql.replace(/\s+/g, " ").trim()}
+                  </button>
+                ))
+              )}
+            </div>
+          </details>
+        </div>
+
+        <div className="hidden lg:contents">
+          <SchemaSidebar
+            counts={counts}
+            onInsertTable={insertToken}
+            onLoadSample={(label, s) => {
+              setSql(s);
+              toast(`Loaded: ${label}`);
+            }}
+            samples={SAMPLE_QUERIES}
+          />
+        </div>
 
         {/* Center column */}
         <div
@@ -214,7 +276,9 @@ export default function Home() {
           </div>
         </div>
 
-        <HistoryRail entries={history} onRestore={restore} />
+        <div className="hidden lg:contents">
+          <HistoryRail entries={history} onRestore={restore} />
+        </div>
       </div>
     </div>
   );

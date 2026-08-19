@@ -554,8 +554,11 @@ class Parser {
     // table.column or alias.column / alias.*
     if (this.peek()?.kind === "dot") {
       this.eat();
-      const col = this.eat();
-      if (expr.kind === "star") return { kind: "star", table: (expr as { kind: "star"; table?: string }).table ?? t.value };
+    const col = this.eat();
+    if (expr.kind === "ident" && col.kind === "punct" && col.value === "*") {
+      return { kind: "star", table: t.value };
+    }
+    if (expr.kind === "star") return { kind: "star", table: (expr as { kind: "star"; table?: string }).table ?? t.value };
       if (expr.kind !== "ident") throw new QueryError("Left side of '.' must be a name or *.");
       return { kind: "ident", table: t.value, name: col.value };
     }
@@ -827,6 +830,42 @@ function exprOutputName(e: Expr): string {
   return String(e.value ?? "literal");
 }
 
+interface Projection {
+  expr: Expr;
+  column: string;
+}
+
+function buildProjection(
+  select: Expr[],
+  tableList: { table: string; alias?: string }[]
+): Projection[] {
+  return select.flatMap((expr) => {
+    if (expr.kind !== "star") {
+      return [{ expr, column: exprOutputName(expr) }];
+    }
+
+    const targetTables = expr.table
+      ? tableList.filter((table) => {
+          const requested = expr.table!.toLowerCase();
+          return table.table.toLowerCase() === requested || table.alias?.toLowerCase() === requested;
+        })
+      : tableList;
+
+    if (targetTables.length === 0) {
+      throw new QueryError(`Unknown table or alias '${expr.table}' in wildcard projection.`);
+    }
+
+    return targetTables.flatMap((table) => {
+      const sourceName = table.alias ?? table.table;
+      const prefix = tableList.length > 1 && !expr.table ? `${sourceName}.` : "";
+      return Object.keys(getTableData(table.table)[0] || {}).map((name) => ({
+        expr: { kind: "ident", table: sourceName, name },
+        column: `${prefix}${name}`,
+      }));
+    });
+  });
+}
+
 function aliasMapOf(select: Expr[]): Map<string, Expr> {
   const map = new Map<string, Expr>();
   for (const e of select) if (isAliasExpr(e)) map.set(e.alias.toLowerCase(), e.inner);
@@ -1013,12 +1052,13 @@ export function execute(q: ParsedQuery): { columns: string[]; rows: unknown[][] 
 
   // 5. SELECT — build aliases first so ORDER BY can resolve them
   const aliases = aliasMapOf(q.select);
-  const columns = q.select.map(exprOutputName);
+  const projection = buildProjection(q.select, tableList);
+  const columns = projection.map((item) => item.column);
 
   const outRows: unknown[][] = [];
   for (const g of groups) {
     const rep = g.members[0];
-    const values = q.select.map((e) => evalSelectExpr(e, rep, tableList, g.members, aliases));
+    const values = projection.map((item) => evalSelectExpr(item.expr, rep, tableList, g.members, aliases));
     outRows.push(values);
   }
 
