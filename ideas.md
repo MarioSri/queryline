@@ -49,3 +49,6 @@ Probability: 0.05
 - Teal is reserved for execution meaning: the run control, active and pinned records, key timing and row metrics, and the square execution marker. Secondary controls remain ink-neutral until interaction.
 - The results ledger uses the strongest teal rule, editorial heading treatment, tabular emphasis, and more visual area than the supporting draft and utility rails.
 - Editorial identity is carried by Fraunces ledger headings, precise hairline rules, and the repeating teal execution tick rather than dashboard-card styling.
+- After each successful run, the result ledger is the clearest destination: its title, count, timing, rule treatment, and usable space outrank editor chrome and supporting rails.
+- Workspace, sharing, archive, preset, and export utilities stay ink-neutral and text-first; teal marks only execution, selection, pinned history, and key result facts.
+- Product microcopy reads as an understated engineering notebook: concise, factual, and ledger-oriented rather than generic encouragement.

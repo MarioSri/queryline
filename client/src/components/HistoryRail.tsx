@@ -3,6 +3,8 @@
  * Right rail: execution history. Each entry shows the query (truncated),
  * its elapsed time, and row count. Clicking restores the query into the
  * editor so past runs are reversible, not lost.
+ * Design alignment: Ledger Light treats the rail as a quiet audit trail; teal
+ * appears only when a saved run has been deliberately pinned.
  */
 
 import { Pin, PinOff, Trash2 } from "lucide-react";
@@ -45,7 +47,7 @@ export default function HistoryRail({ entries, onRestore, onTogglePin, onDelete,
         >
           <div className="font-mono text-[12px] leading-snug text-foreground/90">{truncate(entry.sql, 60)}</div>
           <div className="flex items-center gap-2 mt-1.5 text-[11px] text-muted-foreground font-mono">
-            <span className="text-primary">{entry.elapsedMs} ms</span>
+            <span className={entry.pinned ? "text-primary" : "text-muted-foreground"}>{entry.elapsedMs} ms</span>
             <span className="text-border">|</span>
             <span>{entry.rowCount.toLocaleString("en-US")} rows</span>
             <span className="ml-auto">{entry.ts}</span>
@@ -77,10 +79,10 @@ export default function HistoryRail({ entries, onRestore, onTogglePin, onDelete,
   );
 
   return (
-    <aside className={`w-72 shrink-0 border-l border-border/70 flex flex-col overflow-hidden bg-sidebar/80 ${className}`}>
+    <aside className={`w-72 shrink-0 border-l border-border/70 flex flex-col overflow-hidden bg-sidebar/55 ${className}`}>
       <div className="flex items-baseline justify-between px-4 py-3 border-b border-border/60">
-        <h2 className="flex items-center gap-2 font-serif italic text-[15px] font-medium tracking-tight text-foreground"><span className="h-1.5 w-1.5 bg-primary not-italic" aria-hidden="true" />Execution ledger</h2>
-        <span className="font-mono text-[10px] text-primary">{entries.length} runs</span>
+        <h2 className="flex items-center gap-2 font-serif italic text-[14px] font-medium tracking-tight text-foreground/85"><span className="h-1.5 w-1.5 bg-muted-foreground/65 not-italic" aria-hidden="true" />Execution ledger</h2>
+        <span className="font-mono text-[10px] text-muted-foreground">{entries.length} runs</span>
       </div>
       <div className="overflow-y-auto flex-1 py-2">
         {entries.length === 0 && (

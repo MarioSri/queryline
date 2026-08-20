@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_FILTER_PRESET_FOLDER, DEFAULT_PAGE_SIZE, deleteHistoryEntry, deleteWorkspace, deleteWorkspaceRevisions, findDuplicateWorkspace, getWorkspaceRevisions, mergeImportedWorkspaces, parseFilterPresets, parseHistory, parsePageSize, parseWorkspaceArchive, parseWorkspaceRevisions, parseWorkspaces, recordWorkspaceRevision, serializeWorkspaceArchive, toggleHistoryPin, upsertFilterPreset, upsertWorkspace } from "./preferences";
+import { DEFAULT_FILTER_PRESET_FOLDER, DEFAULT_PAGE_SIZE, deleteHistoryEntry, deleteWorkspace, deleteWorkspaceRevisions, findDuplicateWorkspace, getWorkspaceRevisions, listWorkspaceLabels, mergeImportedFilterPresets, mergeImportedWorkspaces, parseFilterPresetArchive, parseFilterPresets, parseHistory, parsePageSize, parseWorkspaceArchive, parseWorkspaceRevisions, parseWorkspaces, recordWorkspaceRevision, serializeFilterPresetArchive, serializeWorkspaceArchive, toggleHistoryPin, upsertFilterPreset, upsertWorkspace } from "./preferences";
 
 describe("Queryline preferences", () => {
   it("accepts only supported page sizes", () => {
@@ -29,9 +29,9 @@ describe("Queryline preferences", () => {
       { id: "revenue", name: "Monthly revenue", sql: "SELECT 1", createdAt: 10, updatedAt: 20 },
       { id: "bad", name: "", sql: "SELECT 2", createdAt: 10, updatedAt: 30 },
     ]));
-    expect(saved).toEqual([{ id: "revenue", name: "Monthly revenue", sql: "SELECT 1", createdAt: 10, updatedAt: 20 }]);
-    const updated = upsertWorkspace(saved, { id: "revenue", name: "Revenue 2026", sql: "SELECT 2", createdAt: 10, updatedAt: 40 });
-    expect(updated).toEqual([{ id: "revenue", name: "Revenue 2026", sql: "SELECT 2", createdAt: 10, updatedAt: 40 }]);
+    expect(saved).toEqual([{ id: "revenue", name: "Monthly revenue", label: "", sql: "SELECT 1", createdAt: 10, updatedAt: 20 }]);
+    const updated = upsertWorkspace(saved, { id: "revenue", name: "Revenue 2026", label: "Interview prep", sql: "SELECT 2", createdAt: 10, updatedAt: 40 });
+    expect(updated).toEqual([{ id: "revenue", name: "Revenue 2026", label: "Interview prep", sql: "SELECT 2", createdAt: 10, updatedAt: 40 }]);
     expect(deleteWorkspace(updated, "revenue")).toEqual([]);
   });
 
@@ -77,11 +77,38 @@ describe("Queryline preferences", () => {
   });
 
   it("records bounded workspace revisions and removes them with their workspace", () => {
-    const workspace = { id: "revenue", name: "Revenue", sql: "SELECT 1", createdAt: 1, updatedAt: 1 };
+    const workspace = { id: "revenue", name: "Revenue", label: "Finance", sql: "SELECT 1", createdAt: 1, updatedAt: 1 };
     const first = recordWorkspaceRevision({}, workspace, 10);
     const second = recordWorkspaceRevision(first, { ...workspace, sql: "SELECT 2", updatedAt: 20 }, 20);
     expect(getWorkspaceRevisions(second, "revenue").map((revision) => revision.sql)).toEqual(["SELECT 2", "SELECT 1"]);
     expect(parseWorkspaceRevisions(JSON.stringify(second)).revenue).toHaveLength(2);
     expect(deleteWorkspaceRevisions(second, "revenue")).toEqual({});
+  });
+
+  it("normalizes optional workspace labels for portable filing groups", () => {
+    const workspaces = parseWorkspaces(JSON.stringify([
+      { id: "revenue", name: "Revenue", label: " Finance  ", sql: "SELECT 1", createdAt: 1, updatedAt: 1 },
+      { id: "orders", name: "Orders", label: "Operations", sql: "SELECT 2", createdAt: 1, updatedAt: 2 },
+    ]));
+    expect(workspaces.find((workspace) => workspace.id === "revenue")?.label).toBe("Finance");
+    expect(listWorkspaceLabels(workspaces)).toEqual(["Finance", "Operations"]);
+    const revenue = workspaces.find((workspace) => workspace.id === "revenue");
+    expect(revenue).toBeDefined();
+    expect(recordWorkspaceRevision({}, revenue!, 3).revenue[0].label).toBe("Finance");
+  });
+
+  it("exports validated filter presets and merges imports without overwriting matching folder and name pairs", () => {
+    const existing = parseFilterPresets(JSON.stringify([{ id: "finance", name: "Paid", folder: "Finance", filter: "paid", columnFilters: {}, createdAt: 1, updatedAt: 3 }]));
+    const archive = serializeFilterPresetArchive([
+      { id: "finance", name: "Open", folder: "Finance", filter: "open", columnFilters: { 1: "2026" }, createdAt: 2, updatedAt: 4 },
+      { id: "duplicate", name: " paid ", folder: "finance", filter: "late", columnFilters: {}, createdAt: 2, updatedAt: 5 },
+    ], "2026-08-20T00:00:00.000Z");
+    const imported = parseFilterPresetArchive(archive);
+    const merged = mergeImportedFilterPresets(existing, imported ?? []);
+    expect(merged.imported).toBe(1);
+    expect(merged.skipped).toBe(1);
+    expect(merged.presets.map((preset) => preset.name)).toEqual(["Open", "Paid"]);
+    expect(merged.presets[0].id).toBe("finance-imported");
+    expect(parseFilterPresetArchive('{"format":"wrong"}')).toBeNull();
   });
 });

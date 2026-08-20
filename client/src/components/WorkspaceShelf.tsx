@@ -2,10 +2,12 @@
  * Ledger Light — workspace shelf.
  * A compact browser-local filing strip for drafts, portable workspaces, shared
  * links, and deliberate revision recovery without server-side state.
+ * Design alignment: Ledger Light uses labeled filing cues and low-chrome,
+ * keyboard-reachable controls to keep a dense console readable.
  */
 
 import { useRef } from "react";
-import { Bookmark, CopyPlus, Download, History, Link2, Plus, Save, Trash2, Upload } from "lucide-react";
+import { Bookmark, CopyPlus, Download, History, Link2, Plus, Save, Tag, Trash2, Upload } from "lucide-react";
 import type { QueryWorkspace, WorkspaceRevision } from "@/lib/preferences";
 import type { ShareLinkMode } from "@/lib/shareLink";
 
@@ -14,6 +16,9 @@ interface Props {
   activeWorkspaceId: string | null;
   workspaceName: string;
   onWorkspaceNameChange: (name: string) => void;
+  workspaceLabel: string;
+  onWorkspaceLabelChange: (label: string) => void;
+  workspaceLabels: string[];
   onLoadWorkspace: (id: string) => void;
   onSaveWorkspace: () => void;
   onNewWorkspace: () => void;
@@ -54,6 +59,9 @@ export default function WorkspaceShelf({
   activeWorkspaceId,
   workspaceName,
   onWorkspaceNameChange,
+  workspaceLabel,
+  onWorkspaceLabelChange,
+  workspaceLabels,
   onLoadWorkspace,
   onSaveWorkspace,
   onNewWorkspace,
@@ -77,7 +85,7 @@ export default function WorkspaceShelf({
   if (readOnly) {
     return (
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-4 py-1.5 border-t border-border/40 bg-secondary/25">
-        <Link2 className="h-3.5 w-3.5 text-primary shrink-0" aria-hidden="true" />
+        <Link2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" aria-hidden="true" />
         <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Shared query · read only</span>
         <ShareModeControl value={shareLinkMode} onChange={onShareLinkModeChange} />
         <button type="button" onClick={onShareQuery} className="inline-flex items-center gap-1 border-l border-border/60 px-2 py-1 text-[11px] font-mono text-muted-foreground hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary/60 transition-colors duration-150 active:scale-[0.97]" title="Copy this read-only query link" aria-describedby={shareLinkHint ? "share-link-help" : undefined}>
@@ -92,22 +100,34 @@ export default function WorkspaceShelf({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-4 py-1.5 border-t border-border/40 bg-secondary/25">
-      <Bookmark className="h-3.5 w-3.5 text-primary shrink-0" aria-hidden="true" />
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-4 py-1.5 border-t border-border/40 bg-secondary/[0.015]">
+      <Bookmark className="h-3.5 w-3.5 text-muted-foreground shrink-0" aria-hidden="true" />
       <label htmlFor="workspace-select" className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Workspace</label>
       <select id="workspace-select" value={activeWorkspaceId ?? ""} onChange={(event) => { if (event.target.value) onLoadWorkspace(event.target.value); }} className="min-w-[8.5rem] max-w-[12rem] bg-transparent border-0 border-b border-border px-1 py-1 text-[11px] font-mono text-foreground focus:outline-none focus:border-primary" aria-label="Saved query workspace">
         <option value="">Unsaved query</option>
-        {workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}
+        {workspaceLabels.length > 0 ? (
+          <>
+            {workspaces.filter((workspace) => !workspace.label).length > 0 && <optgroup label="Unlabeled">{workspaces.filter((workspace) => !workspace.label).map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</optgroup>}
+            {workspaceLabels.map((label) => <optgroup key={label} label={label}>{workspaces.filter((workspace) => workspace.label === label).map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</optgroup>)}
+          </>
+        ) : workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}
       </select>
       <label htmlFor="workspace-name" className="sr-only">Workspace name</label>
       <input id="workspace-name" value={workspaceName} onChange={(event) => onWorkspaceNameChange(event.target.value)} placeholder="Workspace name" className="min-w-[7rem] flex-1 bg-transparent border-b border-border px-1 py-1 text-[11px] font-mono text-foreground placeholder:text-muted-foreground/65 focus:outline-none focus:border-primary" aria-describedby={isDuplicateName ? "workspace-help workspace-name-error" : "workspace-help"} aria-invalid={isDuplicateName} />
+      <span className="inline-flex items-center border-b border-border text-muted-foreground focus-within:border-primary">
+        <Tag className="h-3 w-3 shrink-0" aria-hidden="true" />
+        <label htmlFor="workspace-label" className="sr-only">Workspace label</label>
+        <input id="workspace-label" value={workspaceLabel} onChange={(event) => onWorkspaceLabelChange(event.target.value)} placeholder="Label" maxLength={32} list="workspace-labels" className="w-[5.8rem] bg-transparent px-1 py-1 text-[11px] font-mono text-foreground placeholder:text-muted-foreground/65 focus:outline-none" aria-describedby="workspace-label-help" />
+      </span>
+      <datalist id="workspace-labels">{workspaceLabels.map((label) => <option key={label} value={label} />)}</datalist>
       <span id="workspace-help" className="sr-only">Save stores this SQL locally. Editing the name then saving renames the active workspace.</span>
+      <span id="workspace-label-help" className="sr-only">Optional label used to group saved workspaces in the selector.</span>
       {isDuplicateName && <span id="workspace-name-error" role="alert" className="text-[10px] font-mono text-destructive">A workspace already uses this name.</span>}
       <button type="button" onClick={onSaveWorkspace} disabled={isDuplicateName || !workspaceName.trim()} title={activeWorkspaceId ? "Save query changes and workspace name" : "Save this query as a workspace"} className="inline-flex items-center gap-1 border-l border-border/60 px-2 py-1 text-[11px] font-mono text-muted-foreground hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary/60 disabled:opacity-35 disabled:pointer-events-none transition-colors duration-150 active:scale-[0.97]"><Save className="h-3 w-3" aria-hidden="true" /> Save</button>
       <button type="button" onClick={onNewWorkspace} title="Prepare a new named workspace from the current query" className="inline-flex items-center gap-1 border-l border-border/60 px-2 py-1 text-[11px] font-mono text-muted-foreground hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary/60 transition-colors duration-150 active:scale-[0.97]"><Plus className="h-3 w-3" aria-hidden="true" /> New</button>
       {activeWorkspaceId && workspaceRevisions.length > 0 && (
         <label className="inline-flex items-center gap-1 border-l border-border/60 px-2 py-1 text-[10px] font-mono text-muted-foreground">
-          <History className="h-3 w-3 text-primary" aria-hidden="true" /> Revision
+          <History className="h-3 w-3" aria-hidden="true" /> Revision
           <select value="" onChange={(event) => { const revision = workspaceRevisions.find((entry) => entry.revisionId === event.target.value); if (revision) onRestoreWorkspaceRevision(revision); }} className="max-w-[8.5rem] bg-transparent text-[10px] font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-primary/60" aria-label="Restore an earlier workspace revision">
             <option value="">Restore…</option>
             {workspaceRevisions.map((revision, index) => <option key={revision.revisionId} value={revision.revisionId}>v{workspaceRevisions.length - index} · {new Date(revision.createdAt).toLocaleString()}</option>)}

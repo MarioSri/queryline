@@ -24,12 +24,12 @@ WebAssembly, and no SQL library.
   as CSV or column-keyed JSON and supports a clipboard JSON copy action.
 - **Browser-local workspaces.** `client/src/lib/preferences.ts` stores named
   SQL drafts in browser storage. A workspace can be saved, selected, renamed,
-  or deleted without sending its query anywhere; duplicate names are rejected
-  case-insensitively. The complete shelf can be exported as a versioned JSON
-  archive or merged back from a validated archive. Each save records a bounded
-  browser-local revision that can be deliberately restored, while page size,
-  execution history, pinned runs, and individual entry deletion persist
-  alongside it.
+  optionally labeled for filing groups, or deleted without sending its query
+  anywhere; duplicate names are rejected case-insensitively. The complete
+  shelf can be exported as a versioned JSON archive or merged back from a
+  validated archive. Each save records a bounded browser-local revision that
+  can be deliberately restored, while page size, execution history, pinned
+  runs, and individual entry deletion persist alongside it.
 - **Read-only share links.** `client/src/lib/shareLink.ts` encodes one trimmed
   SQL draft in the `q` query parameter, restores it as a non-mutable editor,
   and supports making a local editable copy. Optional compact links use a
@@ -40,6 +40,10 @@ WebAssembly, and no SQL library.
 - **Deferred interface code.** The engine, editor, and result grid load behind
   explicit lazy boundaries; Vite also isolates the icon and UI dependency
   groups from the initial application chunk.
+- **Portable filters and discoverable keys.** Browser-local filter presets can
+  be exported as validated JSON and merged back without replacing a matching
+  folder-and-name pair. A compact in-editor reference documents the supported
+  run, indent, filter-clear, and dismiss shortcuts.
 - **Read-only by construction.** The parser has no INSERT/UPDATE/DELETE
   production, so arbitrary SQL cannot mutate anything.
 
@@ -67,7 +71,9 @@ fast even when a query returns tens of thousands of rows.
   alignment; a keyboard-accessible all-cell text filter; and optional,
   composable per-column filters. Named browser-local presets save and restore
   the global plus per-column criteria together and can be organised into named
-  folders, with **General** as the legacy-safe fallback. Escape clears the
+  folders, with **General** as the legacy-safe fallback. A versioned preset
+  archive can be downloaded and merged into another browser, skipping matching
+  folder-and-name pairs rather than overwriting local work. Escape clears the
   focused filter, and a dedicated action clears all active filters. Only the
   current page is rendered, so a 50,000-row result set never touches the DOM
   in bulk.
@@ -79,10 +85,14 @@ fast even when a query returns tens of thousands of rows.
   the workspace selector, rename it by editing its name and saving, or remove
   it without affecting the execution ledger. Duplicate names are prevented
   regardless of casing or surrounding whitespace. Each save records a bounded
-  local revision, which can be restored without contacting a server. Export
-  the workspace shelf as a portable, versioned JSON file; importing validates
-  its shape, merges valid entries, and skips duplicate names rather than
-  overwriting local work.
+  local revision, which can be restored without contacting a server. An
+  optional short label groups related drafts in the workspace selector without
+  changing the duplicate-safe workspace name. Export the workspace shelf as a
+  portable, versioned JSON file; importing validates its shape, merges valid
+  entries, and skips duplicate names rather than overwriting local work.
+- **Keyboard reference**: a compact editor panel lists Ctrl/Cmd+Enter to run,
+  Tab to indent in an editable query, Escape to clear the focused result
+  filter, and Escape to close the reference itself.
 - **Read-only links**: copy a compact URL for a SQL draft, open it in any
   browser to execute and inspect without mutating the draft, then create a
   local editable copy when experimentation is needed. Links use the browser

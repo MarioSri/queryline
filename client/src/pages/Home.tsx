@@ -2,13 +2,15 @@
  * Ledger Light — SQL Query Runner
  * Main console page. Layout: header strip → [ schema | editor over results | history ].
  * Editor and results share the center column with a resizable divider.
+ * Design alignment: Ledger Light organizes browser-local drafts with quiet
+ * filing cues while keeping live SQL execution visually central.
  */
 
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import SchemaSidebar from "@/components/SchemaSidebar";
 import HistoryRail from "@/components/HistoryRail";
 import type { QueryResult } from "@/lib/engine";
-import { deleteHistoryEntry, deleteWorkspace, deleteWorkspaceRevisions, findDuplicateWorkspace, getWorkspaceRevisions, loadHistory, loadWorkspaceRevisions, loadWorkspaces, mergeImportedWorkspaces, parseWorkspaceArchive, recordWorkspaceRevision, saveHistory, saveWorkspaceRevisions, saveWorkspaces, serializeWorkspaceArchive, toggleHistoryPin, upsertWorkspace, type QueryHistoryEntry, type WorkspaceRevision } from "@/lib/preferences";
+import { deleteHistoryEntry, deleteWorkspace, deleteWorkspaceRevisions, findDuplicateWorkspace, getWorkspaceRevisions, listWorkspaceLabels, loadHistory, loadWorkspaceRevisions, loadWorkspaces, mergeImportedWorkspaces, parseWorkspaceArchive, recordWorkspaceRevision, saveHistory, saveWorkspaceRevisions, saveWorkspaces, serializeWorkspaceArchive, toggleHistoryPin, upsertWorkspace, type QueryHistoryEntry, type WorkspaceRevision } from "@/lib/preferences";
 import { SAMPLE_QUERIES } from "@/lib/catalog";
 import { copySharedQueryLink, getSharedQueryLinkDetails, readSharedQueryFromUrl, removeSharedQueryFromUrl, type ShareLinkMode } from "@/lib/shareLink";
 import { toast } from "sonner";
@@ -40,6 +42,7 @@ export default function Home() {
   const [workspaceRevisions, setWorkspaceRevisions] = useState(() => loadWorkspaceRevisions());
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   const [workspaceName, setWorkspaceName] = useState("Untitled query");
+  const [workspaceLabel, setWorkspaceLabel] = useState("");
   const [shareLinkMode, setShareLinkMode] = useState<ShareLinkMode>("standard");
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [dividerY, setDividerY] = useState(36); // editor share %; results deliberately lead the console
@@ -158,6 +161,7 @@ export default function Home() {
     setSql(workspace.sql);
     setActiveWorkspaceId(workspace.id);
     setWorkspaceName(workspace.name);
+    setWorkspaceLabel(workspace.label ?? "");
     toast.success(`Loaded workspace: ${workspace.name}`);
   }, [sharedReadOnly, workspaces]);
   const saveWorkspace = useCallback(() => {
@@ -167,6 +171,7 @@ export default function Home() {
     const workspace = {
       id: active?.id ?? createWorkspaceId(),
       name: trimmedName,
+      label: workspaceLabel,
       sql: sql.trim(),
       createdAt: active?.createdAt ?? now,
       updatedAt: now,
@@ -179,17 +184,18 @@ export default function Home() {
       toast.error(`A workspace named “${trimmedName}” already exists. Choose another name.`);
       return;
     }
-    if (active && (active.name !== workspace.name || active.sql !== workspace.sql)) {
+    if (active && (active.name !== workspace.name || active.label !== workspace.label || active.sql !== workspace.sql)) {
       setWorkspaceRevisions((entries) => recordWorkspaceRevision(entries, active));
     }
     setWorkspaces((entries) => upsertWorkspace(entries, workspace));
     setActiveWorkspaceId(workspace.id);
     setWorkspaceName(workspace.name);
     toast.success(active ? "Workspace saved" : "Workspace created");
-  }, [activeWorkspaceId, sql, workspaceName, workspaces]);
+  }, [activeWorkspaceId, sql, workspaceLabel, workspaceName, workspaces]);
   const newWorkspace = useCallback(() => {
     setActiveWorkspaceId(null);
     setWorkspaceName("Untitled query");
+    setWorkspaceLabel("");
     toast("New workspace ready. Name it, then save your current query.");
   }, []);
   const removeWorkspace = useCallback(() => {
@@ -198,6 +204,7 @@ export default function Home() {
     setWorkspaceRevisions((entries) => deleteWorkspaceRevisions(entries, activeWorkspaceId));
     setActiveWorkspaceId(null);
     setWorkspaceName("Untitled query");
+    setWorkspaceLabel("");
     toast.success("Workspace deleted");
   }, [activeWorkspaceId]);
   const restoreWorkspaceRevision = useCallback((revision: WorkspaceRevision) => {
@@ -207,12 +214,14 @@ export default function Home() {
     }
     setSql(revision.sql);
     setWorkspaceName(revision.name);
+    setWorkspaceLabel(revision.label ?? "");
     toast.success("Earlier revision restored as a draft. Save to keep it.");
   }, [sharedReadOnly]);
   const duplicateWorkspace = useMemo(
     () => findDuplicateWorkspace(workspaces, workspaceName, activeWorkspaceId),
     [activeWorkspaceId, workspaceName, workspaces]
   );
+  const workspaceLabels = useMemo(() => listWorkspaceLabels(workspaces), [workspaces]);
   const shareLinkDetails = useMemo(() => {
     if (typeof window === "undefined") return null;
     try {
@@ -269,6 +278,7 @@ export default function Home() {
     setSharedReadOnly(false);
     setActiveWorkspaceId(null);
     setWorkspaceName("Shared query copy");
+    setWorkspaceLabel("");
     if (typeof window !== "undefined") window.history.replaceState({}, "", removeSharedQueryFromUrl(window.location.href));
     toast.success("Editable query copy ready. Name it and save when needed.");
   }, []);
@@ -407,9 +417,9 @@ export default function Home() {
           }}
         >
           {/* Editor pane */}
-          <div className="flex flex-col border-b border-border/70 bg-secondary/[0.08]" style={{ height: `${dividerY}%` }}>
-            <div className="px-4 py-1.5 border-b border-border/40 flex items-center gap-2 bg-secondary/35 shrink-0">
-              <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Query draft</span>
+          <div className="flex flex-col border-b border-border/70 bg-secondary/[0.035]" style={{ height: `${dividerY}%` }}>
+            <div className="px-4 py-1 border-b border-border/40 flex items-center gap-2 bg-transparent shrink-0">
+              <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground/85">Query draft</span>
               {running && (
                 <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
                   <Loader2 className="h-3 w-3 animate-spin" /> executing
@@ -423,9 +433,12 @@ export default function Home() {
                 onRun={run}
                 running={running}
                 workspaces={workspaces}
-                activeWorkspaceId={activeWorkspaceId}
-                workspaceName={workspaceName}
-                onWorkspaceNameChange={setWorkspaceName}
+                        activeWorkspaceId={activeWorkspaceId}
+                        workspaceName={workspaceName}
+                        onWorkspaceNameChange={setWorkspaceName}
+                        workspaceLabel={workspaceLabel}
+                        onWorkspaceLabelChange={setWorkspaceLabel}
+                        workspaceLabels={workspaceLabels}
                 onLoadWorkspace={loadWorkspace}
                 onSaveWorkspace={saveWorkspace}
                 onNewWorkspace={newWorkspace}
@@ -459,11 +472,11 @@ export default function Home() {
           </div>
 
           {/* Results pane */}
-          <div className="flex-[1.32] flex flex-col min-h-0 overflow-hidden border-t-2 border-t-primary/65 bg-background shadow-[inset_0_1px_0_hsl(var(--background))]">
-            <div className="px-4 py-2 border-b border-border/50 bg-primary/[0.045] shrink-0 flex items-center gap-2">
-              <span className="inline-block h-2 w-2 bg-primary translate-y-[-1px] shadow-[4px_0_0_hsl(var(--primary)/0.16)]" aria-hidden="true" />
-              <span className="font-serif text-[13px] font-semibold tracking-tight text-foreground">Results ledger</span>
-              <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">execution record</span>
+          <div className="flex-[1.55] flex flex-col min-h-0 overflow-hidden border-t-2 border-t-primary/70 bg-background shadow-[inset_0_1px_0_hsl(var(--background))]">
+            <div className="px-4 py-2.5 border-b border-border/50 bg-primary/[0.03] shrink-0 flex items-center gap-2">
+              <span className="inline-block h-2.5 w-2.5 bg-primary translate-y-[-1px] shadow-[5px_0_0_hsl(var(--primary)/0.16)]" aria-hidden="true" />
+              <span className="font-serif text-[15px] font-semibold tracking-tight text-foreground">Results ledger</span>
+              <span className="text-[9px] font-mono uppercase tracking-[0.2em] text-muted-foreground/80">current execution record</span>
               {error && (
                 <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-destructive font-mono">
                   <AlertTriangle className="h-3 w-3" /> {error}

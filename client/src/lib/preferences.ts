@@ -24,6 +24,7 @@ export type PageSize = (typeof PAGE_SIZES)[number];
 export interface QueryWorkspace {
   id: string;
   name: string;
+  label?: string;
   sql: string;
   createdAt: number;
   updatedAt: number;
@@ -33,6 +34,7 @@ export interface WorkspaceRevision {
   workspaceId: string;
   revisionId: string;
   name: string;
+  label?: string;
   sql: string;
   createdAt: number;
 }
@@ -52,6 +54,11 @@ export const DEFAULT_FILTER_PRESET_FOLDER = "General";
 
 export function workspaceNameKey(name: string): string {
   return name.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+}
+
+function normalizeWorkspaceLabel(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value.trim().replace(/\s+/g, " ").slice(0, 32);
 }
 
 function storage(): Storage | null {
@@ -126,13 +133,14 @@ function isWorkspace(value: unknown): value is QueryWorkspace {
   const workspace = value as Record<string, unknown>;
   return typeof workspace.id === "string" && workspace.id.length > 0 &&
     typeof workspace.name === "string" && workspace.name.trim().length > 0 && workspace.name.length <= 80 &&
+    (workspace.label === undefined || typeof workspace.label === "string") &&
     typeof workspace.sql === "string" && workspace.sql.trim().length > 0 &&
     typeof workspace.createdAt === "number" && Number.isFinite(workspace.createdAt) &&
     typeof workspace.updatedAt === "number" && Number.isFinite(workspace.updatedAt);
 }
 
 function normalizeWorkspace(workspace: QueryWorkspace): QueryWorkspace {
-  return { ...workspace, name: workspace.name.trim().slice(0, 80), sql: workspace.sql.trim() };
+  return { ...workspace, name: workspace.name.trim().slice(0, 80), label: normalizeWorkspaceLabel(workspace.label), sql: workspace.sql.trim() };
 }
 
 function sortWorkspaces(entries: QueryWorkspace[]): QueryWorkspace[] {
@@ -181,18 +189,23 @@ export function deleteWorkspace(entries: QueryWorkspace[], id: string): QueryWor
   return entries.filter((workspace) => workspace.id !== id);
 }
 
+export function listWorkspaceLabels(entries: QueryWorkspace[]): string[] {
+  return Array.from(new Set(entries.map((workspace) => normalizeWorkspaceLabel(workspace.label)).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+}
+
 function isWorkspaceRevision(value: unknown): value is WorkspaceRevision {
   if (!value || typeof value !== "object") return false;
   const revision = value as Record<string, unknown>;
   return typeof revision.workspaceId === "string" && revision.workspaceId.length > 0 &&
     typeof revision.revisionId === "string" && revision.revisionId.length > 0 &&
     typeof revision.name === "string" && revision.name.trim().length > 0 && revision.name.length <= 80 &&
+    (revision.label === undefined || typeof revision.label === "string") &&
     typeof revision.sql === "string" && revision.sql.trim().length > 0 &&
     typeof revision.createdAt === "number" && Number.isFinite(revision.createdAt);
 }
 
 function normalizeWorkspaceRevision(revision: WorkspaceRevision): WorkspaceRevision {
-  return { ...revision, name: revision.name.trim().slice(0, 80), sql: revision.sql.trim() };
+  return { ...revision, name: revision.name.trim().slice(0, 80), label: normalizeWorkspaceLabel(revision.label), sql: revision.sql.trim() };
 }
 
 function normalizeWorkspaceRevisionMap(value: unknown): WorkspaceRevisionMap {
@@ -230,7 +243,7 @@ export function recordWorkspaceRevision(entries: WorkspaceRevisionMap, workspace
   const name = workspace.name.trim();
   const sql = workspace.sql.trim();
   if (prior[0]?.name === name && prior[0]?.sql === sql) return normalized;
-  const revision: WorkspaceRevision = { workspaceId: workspace.id, revisionId: `${workspace.id}-${recordedAt}-${prior.length}`, name, sql, createdAt: recordedAt };
+  const revision: WorkspaceRevision = { workspaceId: workspace.id, revisionId: `${workspace.id}-${recordedAt}-${prior.length}`, name, label: normalizeWorkspaceLabel(workspace.label), sql, createdAt: recordedAt };
   return { ...normalized, [workspace.id]: [revision, ...prior].slice(0, MAX_WORKSPACE_REVISIONS) };
 }
 
@@ -301,6 +314,19 @@ export interface ResultFilterPreset {
   columnFilters: ColumnFilters;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface FilterPresetArchive {
+  format: "queryline-filter-presets";
+  version: 1;
+  exportedAt: string;
+  presets: ResultFilterPreset[];
+}
+
+export interface FilterPresetImportResult {
+  presets: ResultFilterPreset[];
+  imported: number;
+  skipped: number;
 }
 
 function normalizeColumnFilters(value: unknown): ColumnFilters {
@@ -377,6 +403,46 @@ export function upsertFilterPreset(entries: ResultFilterPreset[], preset: Result
 
 export function deleteFilterPreset(entries: ResultFilterPreset[], id: string): ResultFilterPreset[] {
   return entries.filter((preset) => preset.id !== id);
+}
+
+function createImportedPresetId(existingIds: Set<string>, sourceId: string): string {
+  let suffix = 1;
+  let id = `${sourceId}-imported`;
+  while (existingIds.has(id)) { suffix += 1; id = `${sourceId}-imported-${suffix}`; }
+  return id;
+}
+
+export function serializeFilterPresetArchive(entries: ResultFilterPreset[], exportedAt = new Date().toISOString()): string {
+  return JSON.stringify({ format: "queryline-filter-presets", version: 1, exportedAt, presets: parseFilterPresets(JSON.stringify(entries)) } satisfies FilterPresetArchive, null, 2);
+}
+
+export function parseFilterPresetArchive(value: string | null): ResultFilterPreset[] | null {
+  if (!value) return null;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!parsed || typeof parsed !== "object") return null;
+    const archive = parsed as Record<string, unknown>;
+    return archive.format === "queryline-filter-presets" && archive.version === 1 && Array.isArray(archive.presets) ? parseFilterPresets(JSON.stringify(archive.presets)) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function mergeImportedFilterPresets(existing: ResultFilterPreset[], incoming: ResultFilterPreset[]): FilterPresetImportResult {
+  const next = uniqueFilterPresetNames(existing.filter(isFilterPreset).map(normalizeFilterPreset));
+  const keys = new Set(next.map(filterPresetKey));
+  const ids = new Set(next.map((preset) => preset.id));
+  let imported = 0;
+  let skipped = 0;
+  for (const candidate of incoming.filter(isFilterPreset).map(normalizeFilterPreset)) {
+    if (next.length >= MAX_FILTER_PRESETS || keys.has(filterPresetKey(candidate))) { skipped += 1; continue; }
+    const id = ids.has(candidate.id) ? createImportedPresetId(ids, candidate.id) : candidate.id;
+    next.push({ ...candidate, id });
+    keys.add(filterPresetKey(candidate));
+    ids.add(id);
+    imported += 1;
+  }
+  return { presets: sortFilterPresets(next).slice(0, MAX_FILTER_PRESETS), imported, skipped };
 }
 
 export function listFilterPresetFolders(entries: ResultFilterPreset[]): string[] {

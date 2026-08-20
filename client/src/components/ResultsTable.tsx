@@ -11,12 +11,14 @@
  * - useMemo guards the page slice against recomputation on unrelated state.
  * - Tabular numerals (font-variant-numeric: tabular-nums) keep columns aligned
  *   without per-cell width measurement.
+ * Design alignment: Ledger Light treats filters and transferable presets as
+ * quiet, keyboard-reachable ledger controls rather than dashboard decoration.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BookmarkPlus, ClipboardCopy, Download, FileJson, ListFilter, Search, Trash2, X } from "lucide-react";
-import { copyResultPageAsJson, downloadCsv, downloadJson } from "@/lib/csv";
-import { DEFAULT_FILTER_PRESET_FOLDER, DEFAULT_PAGE_SIZE, deleteFilterPreset, listFilterPresetFolders, loadFilterPresets, loadPageSize, PAGE_SIZES, saveFilterPresets, savePageSize, upsertFilterPreset, type PageSize, type ResultFilterPreset } from "@/lib/preferences";
+import { BookmarkPlus, ClipboardCopy, Download, FileJson, ListFilter, Search, Trash2, Upload, X } from "lucide-react";
+import { copyResultPageAsJson, downloadCsv, downloadJson, downloadText } from "@/lib/csv";
+import { DEFAULT_FILTER_PRESET_FOLDER, DEFAULT_PAGE_SIZE, deleteFilterPreset, listFilterPresetFolders, loadFilterPresets, loadPageSize, mergeImportedFilterPresets, PAGE_SIZES, parseFilterPresetArchive, saveFilterPresets, savePageSize, serializeFilterPresetArchive, upsertFilterPreset, type PageSize, type ResultFilterPreset } from "@/lib/preferences";
 import { activeColumnFilterCount, filterResultRows, formatResultValue, type ColumnFilters } from "@/lib/tableFilter";
 import { toast } from "sonner";
 
@@ -39,6 +41,7 @@ export default function ResultsTable({ columns, rows }: Props) {
   const [presetFolder, setPresetFolder] = useState(DEFAULT_FILTER_PRESET_FOLDER);
   const [activePresetId, setActivePresetId] = useState("");
   const filterRef = useRef<HTMLInputElement>(null);
+  const presetImportRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     savePageSize(pageSize);
@@ -166,11 +169,36 @@ export default function ResultsTable({ columns, rows }: Props) {
     toast.success("Filter preset removed");
   };
 
+  const exportFilterPresets = () => {
+    downloadText("queryline-filter-presets.json", serializeFilterPresetArchive(filterPresets), "application/json;charset=utf-8");
+    toast.success(`${filterPresets.length} filter preset${filterPresets.length === 1 ? "" : "s"} exported`);
+  };
+
+  const importFilterPresets = async (file: File) => {
+    try {
+      const incoming = parseFilterPresetArchive(await file.text());
+      if (!incoming) {
+        toast.error("Choose a valid Queryline filter preset JSON file.");
+        return;
+      }
+      const merged = mergeImportedFilterPresets(filterPresets, incoming);
+      if (merged.imported === 0) {
+        toast("No presets were imported; matching folder and name pairs already exist or local storage is full.");
+        return;
+      }
+      setFilterPresets(merged.presets);
+      setActivePresetId("");
+      toast.success(`${merged.imported} preset${merged.imported === 1 ? "" : "s"} imported${merged.skipped ? ` · ${merged.skipped} matching preset${merged.skipped === 1 ? "" : "s"} skipped` : ""}`);
+    } catch {
+      toast.error("This filter preset file could not be read.");
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 py-2 border-b border-border/70 bg-primary/[0.018]">
-        <div className="text-xs text-muted-foreground font-mono whitespace-nowrap border-l-2 border-primary pl-2">
-          <span className="font-mono text-[16px] font-bold tabular-nums text-primary">{rowCount.toLocaleString("en-US")}</span> row{rowCount === 1 ? "" : "s"}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 py-2.5 border-b border-border/70 bg-primary/[0.012]">
+        <div className="text-xs text-muted-foreground font-mono whitespace-nowrap border-l-2 border-primary pl-2.5">
+          <span className="font-mono text-[18px] font-bold tracking-tight tabular-nums text-primary">{rowCount.toLocaleString("en-US")}</span> row{rowCount === 1 ? "" : "s"}
           {rowCount > pageSize ? ` · page ${safePage.toLocaleString("en-US")} of ${totalPages.toLocaleString("en-US")}` : ""}
         </div>
         <div className="relative flex min-w-[11rem] flex-1 items-center">
@@ -215,7 +243,7 @@ export default function ResultsTable({ columns, rows }: Props) {
           <ListFilter className="h-3.5 w-3.5" aria-hidden="true" />
           Columns{columnFilterCount > 0 ? ` (${columnFilterCount})` : ""}
         </button>
-        <div className="flex min-w-0 items-center border-l border-border/70 opacity-80 hover:opacity-100 transition-opacity duration-150">
+        <div className="flex min-w-0 items-center border-l border-border/70 opacity-65 hover:opacity-100 transition-opacity duration-150">
           <label htmlFor="filter-preset-select" className="sr-only">Saved filter preset</label>
           <select
             id="filter-preset-select"
@@ -270,8 +298,27 @@ export default function ResultsTable({ columns, rows }: Props) {
           >
             <Trash2 className="h-3 w-3" aria-hidden="true" />
           </button>
+          <button
+            type="button"
+            onClick={exportFilterPresets}
+            className="inline-flex items-center gap-1 border-l border-border/60 px-1.5 py-1 text-muted-foreground hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary/60 transition-colors duration-150 active:scale-[0.97]"
+            title="Download all filter presets as a JSON file"
+            aria-label="Export filter presets"
+          >
+            <Download className="h-3 w-3" aria-hidden="true" /><span className="hidden xl:inline text-[10px] font-mono">Export</span>
+          </button>
+          <input ref={presetImportRef} type="file" accept="application/json,.json" className="sr-only" aria-label="Import Queryline filter preset JSON file" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importFilterPresets(file); event.target.value = ""; }} />
+          <button
+            type="button"
+            onClick={() => presetImportRef.current?.click()}
+            className="inline-flex items-center gap-1 px-1.5 py-1 text-muted-foreground hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary/60 transition-colors duration-150 active:scale-[0.97]"
+            title="Merge filter presets from a Queryline JSON file"
+            aria-label="Import filter presets"
+          >
+            <Upload className="h-3 w-3" aria-hidden="true" /><span className="hidden xl:inline text-[10px] font-mono">Import</span>
+          </button>
         </div>
-        <div className="flex items-center border-l border-border/70 shrink-0 divide-x divide-border/70 opacity-75 hover:opacity-100 transition-opacity duration-150">
+        <div className="flex items-center border-l border-border/70 shrink-0 divide-x divide-border/70 opacity-60 hover:opacity-100 transition-opacity duration-150">
           <button
             type="button"
             onClick={() => {

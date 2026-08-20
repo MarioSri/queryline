@@ -33,7 +33,7 @@ export function resultPageToJson(columns: string[], rows: unknown[][]): string {
   return JSON.stringify(records, null, 2);
 }
 
-function downloadText(filename: string, content: string, type: string): void {
+export function downloadText(filename: string, content: string, type: string): void {
   const blob = new Blob([content], { type });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
