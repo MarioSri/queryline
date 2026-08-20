@@ -12,14 +12,22 @@ WebAssembly, and no SQL library.
   recursive-descent parser, and executor in roughly 1,200 lines of
   TypeScript, with no runtime dependencies.
 - **A seeded relational dataset.** Five tables with realistic volumes:
-  2,000 customers, 400 products, 50,000 orders, ~150,000 order line items,
-  and ~18,000 reviews.
+  2,000 customers, 400 products, 50,000 orders, 120,000 order line items,
+  and 18,000 reviews.
 - **Paginated results.** Only the active page is ever rendered, with a
   sticky header and column sorting, so a 50,000-row result set pages like
   a small one.
 - **A schema sidebar** with per-table row counts and clickable sample
-  queries, plus a **query history** rail that records every run with its
-  execution time and row count.
+  queries, plus a persistent **execution ledger** that records every run with
+  its execution time and row count.
+- **Portable result pages.** `client/src/lib/csv.ts` exports the current page
+  as CSV or column-keyed JSON and supports a clipboard JSON copy action.
+- **Local workspace preferences.** `client/src/lib/preferences.ts` stores page
+  size and query history in browser storage, including pinned runs and
+  individual entry deletion.
+- **Deferred interface code.** The engine, editor, and result grid load behind
+  explicit lazy boundaries; Vite also isolates the icon and UI dependency
+  groups from the initial application chunk.
 - **Read-only by construction.** The parser has no INSERT/UPDATE/DELETE
   production, so arbitrary SQL cannot mutate anything.
 
@@ -39,16 +47,17 @@ fast even when a query returns tens of thousands of rows.
 | customers | 2,000 | customer demographics and segments |
 | products | 400 | product catalog across categories |
 | orders | 50,000 | five years of orders, the big table |
-| order_items | ~150,000 | line items that join into orders |
-| reviews | ~18,000 | ratings and review text |
+| order_items | 120,000 | line items that join into orders |
+| reviews | 18,000 | ratings and review text |
 
-- **Results table** with pagination (10/25/50 rows per page), a sticky
-  header, and numeric alignment. Only the current page is ever rendered, so
-  a 50,000-row result set never touches the DOM in bulk.
+- **Results table** with CSV, JSON, and clipboard exports for the active page;
+  pagination (25/50/100/500 rows per page); a sticky header; and numeric
+  alignment. Only the current page is rendered, so a 50,000-row result set
+  never touches the DOM in bulk.
 - **Schema sidebar** listing every table and column with row counts, and six
   sample queries you can load into the editor in one click.
-- **Query history** rail: your recent runs are kept so you can restore any
-  of them back into the editor.
+- **Execution ledger**: recent runs persist locally, can be restored into the
+  editor, pinned to the top, or removed individually.
 - **Errors surface inline**: invalid SQL shows a plain-language message
   (the engine validates column names, table names, and clause order).
 
@@ -129,7 +138,7 @@ roughly 1.4s and 5s in the browser on first run, including the seed cost
 
 Rendering is the part that most SQL UIs get wrong. A naive table renders
 every row; on 50,000 rows that means tens of thousands of DOM nodes and
-seconds of layout work. This app renders only the active page (10 to 50
+seconds of layout work. This app renders only the active page (25 to 500
 rows) and keeps column cells memoized by row identity, so paging through a
 large result set feels like paging through a small one. The measured
 execution time (shown in the header and history rail) excludes rendering,
@@ -153,13 +162,16 @@ There are no environment variables, no API keys, and no backend to configure.
 ```
 client/src/
 ├── lib/engine.ts   # tokenizer, parser, executor (the SQL engine)
+├── lib/catalog.ts  # lightweight schema and sample-query UI metadata
+├── lib/csv.ts      # current-page CSV, JSON, and clipboard exports
+├── lib/preferences.ts # local page-size and execution-ledger state
 ├── lib/seed.ts     # CREATE TABLE + INSERT statements for the dataset
-├── pages/Home.tsx  # console layout: sidebar, editor, results
+├── pages/Home.tsx  # console layout and lazy UI/engine boundaries
 └── components/
     ├── QueryEditor.tsx    # editor with Ctrl+Enter and Tab indent
     ├── ResultsTable.tsx   # paginated, memoized result grid
     ├── SchemaSidebar.tsx  # tables, columns, row counts, sample queries
-    └── HistoryRail.tsx    # recent runs, click to restore
+    └── HistoryRail.tsx    # persistent runs, pin/delete, click to restore
 ```
 
 ## Scope and limitations
@@ -184,8 +196,9 @@ built `dist/` output; nothing is posted to any external service.
 ## Contributing
 
 Bug reports and improvements are welcome through issues and pull requests.
-For engine work, the test suite in `client/src/lib/engine.test.ts` is the
-regression contract; keep it green.
+The regression contract is split across `client/src/lib/engine.test.ts`,
+`client/src/lib/csv.test.ts`, and `client/src/lib/preferences.test.ts`; keep
+all 27 tests green.
 
 ## License
 

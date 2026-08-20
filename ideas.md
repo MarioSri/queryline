@@ -34,3 +34,9 @@ Probability: 0.05
 - **Brand Voice**: Understated engineering copy. Examples: "Run a query. Read the ledger." / "50,000 rows, one page at a time."
 - **Wordmark & Logo**: "queryline" set in Fraunces italic lowercase with a teal square cursor glyph (▮) replacing the dot feel — actually use a simple teal block glyph before the wordmark.
 - **Signature Brand Color**: Deep teal oklch(0.45 0.08 200).
+
+## Style Decisions
+
+- Keep the user-approved clean sans-serif “Queryline” wordmark and uploaded favicon in persistent chrome; the editorial serif treatment appears in the supporting “the execution ledger” line and the execution-rail heading instead.
+- Maintain the Ledger Light palette of warm paper, ink, hairline neutrals, and deep teal. The retained uploaded mark is hue-adjusted in the application header so it supports the teal-only accent system.
+- Treat result values and execution history as the visual hero: JetBrains Mono data, teal timing and count signals, hairline grouping, and a reserved teal rule for pinned runs.

@@ -14,9 +14,10 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Download } from "lucide-react";
-import { downloadCsv } from "@/lib/csv";
+import { ClipboardCopy, Download, FileJson } from "lucide-react";
+import { copyResultPageAsJson, downloadCsv, downloadJson } from "@/lib/csv";
 import { DEFAULT_PAGE_SIZE, loadPageSize, PAGE_SIZES, savePageSize, type PageSize } from "@/lib/preferences";
+import { toast } from "sonner";
 
 interface Props {
   columns: string[];
@@ -81,22 +82,61 @@ export default function ResultsTable({ columns, rows }: Props) {
     }
   };
 
+  const exportBaseName = `queryline-page-${safePage}-of-${totalPages}`;
+
+  const copyJson = async () => {
+    try {
+      await copyResultPageAsJson(columns, pageRows);
+      toast.success("Current result page copied as JSON");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not copy this result page.";
+      toast.error(message);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between gap-3 px-4 py-2 border-b border-border/60 bg-card/60">
         <div className="text-xs text-muted-foreground font-mono">
-          {rowCount.toLocaleString("en-US")} row{rowCount === 1 ? "" : "s"}
+          <span className="text-primary">{rowCount.toLocaleString("en-US")}</span> row{rowCount === 1 ? "" : "s"}
           {rowCount > pageSize ? ` · page ${safePage.toLocaleString("en-US")} of ${totalPages.toLocaleString("en-US")}` : ""}
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
-            onClick={() => downloadCsv(`queryline-page-${safePage}-of-${totalPages}.csv`, columns, pageRows)}
+            onClick={() => {
+              downloadCsv(`${exportBaseName}.csv`, columns, pageRows);
+              toast.success("Current result page exported as CSV");
+            }}
             className="inline-flex items-center gap-1 px-2 py-1 text-xs font-mono border border-border rounded hover:bg-accent focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors duration-150 active:scale-[0.97]"
             title="Download the current result page as CSV"
+            aria-label="Download the current result page as CSV"
           >
             <Download className="h-3 w-3" aria-hidden="true" />
             <span className="hidden sm:inline">CSV</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              downloadJson(`${exportBaseName}.json`, columns, pageRows);
+              toast.success("Current result page exported as JSON");
+            }}
+            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-mono border border-border rounded hover:bg-accent focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors duration-150 active:scale-[0.97]"
+            title="Download the current result page as JSON"
+            aria-label="Download the current result page as JSON"
+          >
+            <FileJson className="h-3 w-3" aria-hidden="true" />
+            <span className="hidden sm:inline">JSON</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => void copyJson()}
+            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-mono border border-border rounded hover:bg-accent focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors duration-150 active:scale-[0.97]"
+            title="Copy the current result page as JSON"
+            aria-label="Copy the current result page as JSON"
+          >
+            <ClipboardCopy className="h-3 w-3" aria-hidden="true" />
+            <span className="hidden sm:inline">Copy</span>
           </button>
           {rowCount > DEFAULT_PAGE_SIZE && (
             <div className="flex items-center gap-1.5">
@@ -124,12 +164,12 @@ export default function ResultsTable({ columns, rows }: Props) {
         <table className="w-full text-[13px] border-collapse">
           <thead className="sticky top-0 bg-secondary z-10">
             <tr>
-              <th className="text-left text-[11px] font-medium text-muted-foreground px-3 py-2 border-b border-border/70 w-10">#</th>
+              <th className="text-left text-[10px] font-semibold uppercase tracking-widest text-muted-foreground px-3 py-2.5 border-b border-border/70 w-10">#</th>
               {columns.map((col, i) => (
                 <th
                   key={`${col}-${i}`}
                   onClick={() => handleSort(i)}
-                  className="text-left text-[11px] font-semibold uppercase tracking-wide text-foreground/80 px-3 py-2 border-b border-border/70 cursor-pointer select-none hover:text-primary transition-colors duration-150 whitespace-nowrap"
+                  className="text-left text-[10px] font-bold uppercase tracking-widest text-foreground/80 px-3 py-2.5 border-b border-border/70 cursor-pointer select-none hover:text-primary transition-colors duration-150 whitespace-nowrap"
                 >
                   {col}
                   {sortCol === i && (
@@ -148,7 +188,7 @@ export default function ResultsTable({ columns, rows }: Props) {
                 {row.map((cell, c) => (
                   <td
                     key={c}
-                    className="px-3 py-1.5 border-b border-border/40 align-top whitespace-nowrap max-w-[280px] overflow-hidden text-ellipsis"
+                    className="px-3 py-1.5 font-mono text-[12px] border-b border-border/40 align-top whitespace-nowrap max-w-[280px] overflow-hidden text-ellipsis"
                     style={{ fontVariantNumeric: "tabular-nums" }}
                     title={formatCell(cell)}
                   >

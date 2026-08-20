@@ -13,6 +13,7 @@ export interface QueryHistoryEntry {
   elapsedMs: number;
   rowCount: number;
   ts: string;
+  pinned: boolean;
 }
 
 export const PAGE_SIZES = [25, 50, 100, 500] as const;
@@ -41,8 +42,17 @@ function isHistoryEntry(value: unknown): value is QueryHistoryEntry {
     typeof entry.sql === "string" && entry.sql.length > 0 &&
     typeof entry.elapsedMs === "number" && Number.isFinite(entry.elapsedMs) && entry.elapsedMs >= 0 &&
     typeof entry.rowCount === "number" && Number.isSafeInteger(entry.rowCount) && entry.rowCount >= 0 &&
-    typeof entry.ts === "string"
+    typeof entry.ts === "string" &&
+    (entry.pinned === undefined || typeof entry.pinned === "boolean")
   );
+}
+
+function normalizeHistoryEntry(entry: QueryHistoryEntry): QueryHistoryEntry {
+  return { ...entry, pinned: entry.pinned === true };
+}
+
+function sortPinnedFirst(entries: QueryHistoryEntry[]): QueryHistoryEntry[] {
+  return [...entries].sort((a, b) => Number(b.pinned) - Number(a.pinned));
 }
 
 export function parseHistory(value: string | null): QueryHistoryEntry[] {
@@ -50,7 +60,7 @@ export function parseHistory(value: string | null): QueryHistoryEntry[] {
   try {
     const parsed: unknown = JSON.parse(value);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isHistoryEntry).slice(0, MAX_HISTORY);
+    return sortPinnedFirst(parsed.filter(isHistoryEntry).map(normalizeHistoryEntry)).slice(0, MAX_HISTORY);
   } catch {
     return [];
   }
@@ -66,7 +76,7 @@ export function loadHistory(): QueryHistoryEntry[] {
 
 export function saveHistory(entries: QueryHistoryEntry[]): void {
   try {
-    storage()?.setItem(HISTORY_KEY, JSON.stringify(entries.filter(isHistoryEntry).slice(0, MAX_HISTORY)));
+    storage()?.setItem(HISTORY_KEY, JSON.stringify(sortPinnedFirst(entries.filter(isHistoryEntry).map(normalizeHistoryEntry)).slice(0, MAX_HISTORY)));
   } catch {
     // Storage can be disabled or full; history remains available in memory.
   }
@@ -92,4 +102,12 @@ export function savePageSize(pageSize: PageSize): void {
   } catch {
     // Preferences are optional; a browser storage failure must not block results.
   }
+}
+
+export function toggleHistoryPin(entries: QueryHistoryEntry[], id: number): QueryHistoryEntry[] {
+  return sortPinnedFirst(entries.map((entry) => (entry.id === id ? { ...entry, pinned: !entry.pinned } : entry)));
+}
+
+export function deleteHistoryEntry(entries: QueryHistoryEntry[], id: number): QueryHistoryEntry[] {
+  return entries.filter((entry) => entry.id !== id);
 }

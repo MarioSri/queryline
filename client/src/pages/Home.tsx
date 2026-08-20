@@ -4,16 +4,18 @@
  * Editor and results share the center column with a resizable divider.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import QueryEditor from "@/components/QueryEditor";
-import ResultsTable from "@/components/ResultsTable";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import SchemaSidebar from "@/components/SchemaSidebar";
 import HistoryRail from "@/components/HistoryRail";
 import type { QueryResult } from "@/lib/engine";
-import { loadHistory, saveHistory, type QueryHistoryEntry } from "@/lib/preferences";
+import { deleteHistoryEntry, loadHistory, saveHistory, toggleHistoryPin, type QueryHistoryEntry } from "@/lib/preferences";
 import { SAMPLE_QUERIES } from "@/lib/catalog";
 import { toast } from "sonner";
 import { AlertTriangle, Timer, Rows3, Loader2 } from "lucide-react";
+
+// Deferred panes keep the console shell responsive while editor and table code load independently.
+const QueryEditor = lazy(() => import("@/components/QueryEditor"));
+const ResultsTable = lazy(() => import("@/components/ResultsTable"));
 
 function clock(): string {
   const d = new Date();
@@ -69,6 +71,7 @@ export default function Home() {
             elapsedMs: r.elapsedMs,
             rowCount: r.rows.length,
             ts: clock(),
+            pinned: false,
           },
           ...h,
         ].slice(0, 50)
@@ -101,6 +104,13 @@ export default function Home() {
 
   const restore = useCallback((s: string) => setSql(s), []);
   const insertToken = useCallback((token: string) => setSql((s) => s + token), []);
+  const togglePin = useCallback((id: number) => {
+    setHistory((entries) => toggleHistoryPin(entries, id));
+  }, []);
+  const removeHistoryEntry = useCallback((id: number) => {
+    setHistory((entries) => deleteHistoryEntry(entries, id));
+    toast.success("Saved query removed");
+  }, []);
 
   const metrics = useMemo(() => {
     if (!result) return null;
@@ -116,21 +126,21 @@ export default function Home() {
             <img
               src="/manus-storage/queryline-logo_e1a45a25.png"
               alt="Queryline logo"
-              className="h-6 w-6 rounded-[3px] object-contain"
+              className="h-6 w-6 rounded-[3px] object-contain hue-rotate-[145deg] saturate-[0.8]"
             />
             <h1 className="font-semibold text-lg tracking-tight text-foreground">
               Queryline
             </h1>
           </div>
-          <span className="text-[11px] font-mono text-muted-foreground hidden xl:inline">
-            browser SQL lab · hand-rolled engine, zero dependencies
+          <span className="hidden md:inline font-serif italic text-[13px] text-muted-foreground">
+            the execution ledger
           </span>
           {metrics && (
             <div className="ml-auto flex items-center gap-2 sm:gap-4 text-[10px] sm:text-[11px] font-mono text-muted-foreground whitespace-nowrap">
-              <span className="inline-flex items-center gap-1">
+              <span className="inline-flex items-center gap-1 text-primary">
                 <Rows3 className="h-3 w-3" /> {metrics.rows.toLocaleString("en-US")} rows
               </span>
-              <span className="inline-flex items-center gap-1">
+              <span className="inline-flex items-center gap-1 text-primary">
                 <Timer className="h-3 w-3" /> {metrics.ms} ms
               </span>
               <span className="inline-flex items-center gap-1">
@@ -189,6 +199,8 @@ export default function Home() {
               restore(query);
               setCompactPanel(null);
             }}
+            onTogglePin={togglePin}
+            onDelete={removeHistoryEntry}
           />
         </div>
       )}
@@ -234,7 +246,9 @@ export default function Home() {
                 </span>
               )}
             </div>
-            <QueryEditor value={sql} onChange={setSql} onRun={run} running={running} />
+            <Suspense fallback={<div className="flex-1 p-4 text-xs font-mono text-muted-foreground">Loading editor…</div>}>
+              <QueryEditor value={sql} onChange={setSql} onRun={run} running={running} />
+            </Suspense>
           </div>
 
           {/* Divider */}
@@ -261,7 +275,9 @@ export default function Home() {
               )}
             </div>
             {result ? (
-              <ResultsTable columns={result.columns} rows={result.rows} />
+              <Suspense fallback={<div className="flex-1 p-4 text-xs font-mono text-muted-foreground">Loading result grid…</div>}>
+                <ResultsTable columns={result.columns} rows={result.rows} />
+              </Suspense>
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center gap-2 px-8 text-center text-muted-foreground">
                 <Rows3 className="h-8 w-8 opacity-30" />
@@ -274,7 +290,13 @@ export default function Home() {
           </div>
         </div>
 
-        <HistoryRail className="hidden lg:flex" entries={history} onRestore={restore} />
+        <HistoryRail
+          className="hidden lg:flex"
+          entries={history}
+          onRestore={restore}
+          onTogglePin={togglePin}
+          onDelete={removeHistoryEntry}
+        />
       </div>
     </div>
   );
