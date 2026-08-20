@@ -554,11 +554,8 @@ class Parser {
     // table.column or alias.column / alias.*
     if (this.peek()?.kind === "dot") {
       this.eat();
-    const col = this.eat();
-    if (expr.kind === "ident" && col.kind === "punct" && col.value === "*") {
-      return { kind: "star", table: t.value };
-    }
-    if (expr.kind === "star") return { kind: "star", table: (expr as { kind: "star"; table?: string }).table ?? t.value };
+      const col = this.eat();
+      if (expr.kind === "star") return { kind: "star", table: (expr as { kind: "star"; table?: string }).table ?? t.value };
       if (expr.kind !== "ident") throw new QueryError("Left side of '.' must be a name or *.");
       return { kind: "ident", table: t.value, name: col.value };
     }
@@ -830,42 +827,6 @@ function exprOutputName(e: Expr): string {
   return String(e.value ?? "literal");
 }
 
-interface Projection {
-  expr: Expr;
-  column: string;
-}
-
-function buildProjection(
-  select: Expr[],
-  tableList: { table: string; alias?: string }[]
-): Projection[] {
-  return select.flatMap((expr) => {
-    if (expr.kind !== "star") {
-      return [{ expr, column: exprOutputName(expr) }];
-    }
-
-    const targetTables = expr.table
-      ? tableList.filter((table) => {
-          const requested = expr.table!.toLowerCase();
-          return table.table.toLowerCase() === requested || table.alias?.toLowerCase() === requested;
-        })
-      : tableList;
-
-    if (targetTables.length === 0) {
-      throw new QueryError(`Unknown table or alias '${expr.table}' in wildcard projection.`);
-    }
-
-    return targetTables.flatMap((table) => {
-      const sourceName = table.alias ?? table.table;
-      const prefix = tableList.length > 1 && !expr.table ? `${sourceName}.` : "";
-      return Object.keys(getTableData(table.table)[0] || {}).map((name) => ({
-        expr: { kind: "ident", table: sourceName, name },
-        column: `${prefix}${name}`,
-      }));
-    });
-  });
-}
-
 function aliasMapOf(select: Expr[]): Map<string, Expr> {
   const map = new Map<string, Expr>();
   for (const e of select) if (isAliasExpr(e)) map.set(e.alias.toLowerCase(), e.inner);
@@ -915,6 +876,7 @@ export function execute(q: ParsedQuery): { columns: string[]; rows: unknown[][] 
     { table: q.from.table, alias: q.from.alias },
     ...q.joins.map((j) => ({ table: j.table, alias: j.alias })),
   ];
+  const select = expandWildcards(q.select, tableList);
 
   // 1. FROM + JOINs: nested-loop join filtered by the ON predicate.
   let scopes: Scoped[] = getTableData(q.from.table).map((row) => ({
@@ -1012,9 +974,9 @@ export function execute(q: ParsedQuery): { columns: string[]; rows: unknown[][] 
   }
 
   // 3. GROUP BY
-  const hasAgg = q.select.some(exprHasAggregate);
+  const hasAgg = select.some(exprHasAggregate);
   let groups: { key: string; members: Scoped[] }[];
-  const selectAliases = aliasMapOf(q.select);
+  const selectAliases = aliasMapOf(select);
   if (q.groupBy.length > 0) {
     const map = new Map<string, Scoped[]>();
     for (const s of scopes) {
@@ -1051,14 +1013,13 @@ export function execute(q: ParsedQuery): { columns: string[]; rows: unknown[][] 
   }
 
   // 5. SELECT — build aliases first so ORDER BY can resolve them
-  const aliases = aliasMapOf(q.select);
-  const projection = buildProjection(q.select, tableList);
-  const columns = projection.map((item) => item.column);
+  const aliases = aliasMapOf(select);
+  const columns = select.map(exprOutputName);
 
   const outRows: unknown[][] = [];
   for (const g of groups) {
     const rep = g.members[0];
-    const values = projection.map((item) => evalSelectExpr(item.expr, rep, tableList, g.members, aliases));
+    const values = select.map((e) => evalSelectExpr(e, rep, tableList, g.members, aliases));
     outRows.push(values);
   }
 
@@ -1099,6 +1060,49 @@ export function execute(q: ParsedQuery): { columns: string[]; rows: unknown[][] 
   if (q.limit !== undefined) outRows.length = Math.min(outRows.length, q.limit);
 
   return { columns, rows: outRows };
+}
+
+/** Replace SELECT * with concrete table columns before rows are projected.
+ * Each generated expression is aliased so joined tables retain unique, stable
+ * result-grid headers instead of producing a single array-valued '*' cell. */
+function expandWildcards(
+  select: Expr[],
+  tableList: { table: string; alias?: string }[]
+): Expr[] {
+  const usedHeaders = new Set<string>();
+  const expanded: Expr[] = [];
+
+  for (const expression of select) {
+    if (expression.kind !== "star") {
+      expanded.push(expression);
+      usedHeaders.add(exprOutputName(expression).toLowerCase());
+      continue;
+    }
+
+    const tables = expression.table
+      ? tableList.filter((item) =>
+          [item.table, item.alias].filter(Boolean).some((name) => name!.toLowerCase() === expression.table!.toLowerCase())
+        )
+      : tableList;
+
+    if (tables.length === 0) throw new QueryError(`Unknown table or alias in wildcard: ${expression.table}.*`);
+
+    for (const item of tables) {
+      const qualifier = item.alias ?? item.table;
+      for (const column of Object.keys(getTableData(item.table)[0] ?? {})) {
+        const baseHeader = column;
+        const header = usedHeaders.has(baseHeader.toLowerCase()) ? `${qualifier}.${column}` : baseHeader;
+        usedHeaders.add(header.toLowerCase());
+        expanded.push({
+          kind: "alias",
+          inner: { kind: "ident", table: qualifier, name: column },
+          alias: header,
+        });
+      }
+    }
+  }
+
+  return expanded;
 }
 
 function resolveOrderValue(

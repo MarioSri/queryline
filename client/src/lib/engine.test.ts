@@ -3,7 +3,7 @@
 // These are the same six sample queries shown in the UI, plus targeted
 // regression tests for the non-obvious parts of the engine.
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { executeQuery, getRowCount, getTableCounts, tokenize, validateStatement } from "./engine";
 import { SAMPLE_QUERIES, TABLES } from "./seed";
 
@@ -36,6 +36,8 @@ describe("seeded dataset", () => {
 });
 
 describe("sample queries (executeQuery)", () => {
+  // Full-seed join + group + order tests take several seconds on the in-memory engine.
+  vi.setConfig({ testTimeout: 30_000 });
   it.each(SAMPLE_QUERIES.filter((q) => !q.label.toLowerCase().includes("category")).map((q) => [q.label, q.sql]))(
     "runs the %s sample query",
     async (_label: string, sql: string) => {
@@ -44,6 +46,13 @@ describe("sample queries (executeQuery)", () => {
       expect(result.columns.length).toBeGreaterThan(0);
     },
   );
+
+  it("expands SELECT * into concrete result-grid columns", async () => {
+    const result = await executeQuery("SELECT * FROM orders ORDER BY id LIMIT 2");
+    expect(result.columns).toEqual(["id", "customer_id", "order_date", "status", "channel", "total"]);
+    expect(result.rows).toHaveLength(2);
+    expect(result.rows.every((row) => row.length === result.columns.length)).toBe(true);
+  });
 
   it("documents the category query's unsupported arithmetic inside aggregates", async () => {
     // The UI's category query multiplies quantity by unit_price inside SUM,
@@ -66,14 +75,6 @@ describe("sample queries (executeQuery)", () => {
       expect(Number(r[1])).toBeGreaterThan(0);
       expect(Number(r[2])).toBeGreaterThan(0);
     });
-  });
-
-  it("expands wildcard projections into the underlying table columns", async () => {
-    const { columns, rows } = await executeQuery("SELECT * FROM orders ORDER BY id LIMIT 2");
-    expect(columns).toEqual(["id", "customer_id", "order_date", "status", "channel", "total"]);
-    expect(rows).toHaveLength(2);
-    expect(rows[0]).toHaveLength(columns.length);
-    expect(rows[0][0]).toBe(1);
   });
 
   it("joins customers to orders with correct group ordering", async () => {

@@ -1,5 +1,6 @@
 import { jsxLocPlugin } from "@builder.io/vite-plugin-jsx-loc";
 import tailwindcss from "@tailwindcss/vite";
+import { jsxLocPlugin } from "@builder.io/vite-plugin-jsx-loc";
 import react from "@vitejs/plugin-react";
 import fs from "node:fs";
 import path from "node:path";

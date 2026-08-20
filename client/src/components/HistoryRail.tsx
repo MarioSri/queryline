@@ -17,6 +17,7 @@ interface HistoryEntry {
 interface Props {
   entries: HistoryEntry[];
   onRestore: (sql: string) => void;
+  className?: string;
 }
 
 function truncate(sql: string, max = 44): string {
@@ -24,9 +25,9 @@ function truncate(sql: string, max = 44): string {
   return single.length > max ? single.slice(0, max) + "…" : single;
 }
 
-export default function HistoryRail({ entries, onRestore }: Props) {
+export default function HistoryRail({ entries, onRestore, className = "" }: Props) {
   return (
-    <aside className="w-72 shrink-0 border-l border-border/70 flex flex-col overflow-hidden bg-sidebar">
+    <aside className={`w-72 shrink-0 border-l border-border/70 flex flex-col overflow-hidden bg-sidebar ${className}`}>
       <div className="px-4 py-3 border-b border-border/60">
         <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">History</h2>
       </div>

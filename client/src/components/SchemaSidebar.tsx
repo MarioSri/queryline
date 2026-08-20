@@ -14,15 +14,16 @@ interface Props {
   onInsertTable: (sql: string) => void;
   onLoadSample: (label: string, sql: string) => void;
   samples: { label: string; sql: string }[];
+  className?: string;
 }
 
-export default function SchemaSidebar({ counts, onInsertTable, onLoadSample, samples }: Props) {
+export default function SchemaSidebar({ counts, onInsertTable, onLoadSample, samples, className = "" }: Props) {
   const [open, setOpen] = useState<Record<string, boolean>>({ orders: true });
 
   const toggle = (name: string) => setOpen((s) => ({ ...s, [name]: !s[name] }));
 
   return (
-    <aside className="w-64 shrink-0 border-r border-border/70 flex flex-col overflow-hidden bg-sidebar">
+    <aside className={`w-64 shrink-0 border-r border-border/70 flex flex-col overflow-hidden bg-sidebar ${className}`}>
       <div className="px-4 py-3 border-b border-border/60">
         <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Schema</h2>
       </div>
