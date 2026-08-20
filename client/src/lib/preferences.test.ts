@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PAGE_SIZE, deleteHistoryEntry, parseHistory, parsePageSize, toggleHistoryPin } from "./preferences";
+import { DEFAULT_PAGE_SIZE, deleteHistoryEntry, deleteWorkspace, parseHistory, parsePageSize, parseWorkspaces, toggleHistoryPin, upsertWorkspace } from "./preferences";
 
 describe("Queryline preferences", () => {
   it("accepts only supported page sizes", () => {
@@ -22,5 +22,16 @@ describe("Queryline preferences", () => {
     const pinned = toggleHistoryPin(entries, 2);
     expect(pinned.map((entry) => entry.id)).toEqual([2, 1]);
     expect(deleteHistoryEntry(pinned, 2).map((entry) => entry.id)).toEqual([1]);
+  });
+
+  it("validates, updates, and removes browser-local named workspaces", () => {
+    const saved = parseWorkspaces(JSON.stringify([
+      { id: "revenue", name: "Monthly revenue", sql: "SELECT 1", createdAt: 10, updatedAt: 20 },
+      { id: "bad", name: "", sql: "SELECT 2", createdAt: 10, updatedAt: 30 },
+    ]));
+    expect(saved).toEqual([{ id: "revenue", name: "Monthly revenue", sql: "SELECT 1", createdAt: 10, updatedAt: 20 }]);
+    const updated = upsertWorkspace(saved, { id: "revenue", name: "Revenue 2026", sql: "SELECT 2", createdAt: 10, updatedAt: 40 });
+    expect(updated).toEqual([{ id: "revenue", name: "Revenue 2026", sql: "SELECT 2", createdAt: 10, updatedAt: 40 }]);
+    expect(deleteWorkspace(updated, "revenue")).toEqual([]);
   });
 });

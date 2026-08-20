@@ -77,9 +77,9 @@ export default function HistoryRail({ entries, onRestore, onTogglePin, onDelete,
   );
 
   return (
-    <aside className={`w-72 shrink-0 border-l border-border/70 flex flex-col overflow-hidden bg-sidebar ${className}`}>
+    <aside className={`w-72 shrink-0 border-l border-border/70 flex flex-col overflow-hidden bg-sidebar/80 ${className}`}>
       <div className="flex items-baseline justify-between px-4 py-3 border-b border-border/60">
-        <h2 className="font-serif italic text-[15px] font-medium tracking-tight text-foreground">Execution ledger</h2>
+        <h2 className="flex items-center gap-2 font-serif italic text-[15px] font-medium tracking-tight text-foreground"><span className="h-1.5 w-1.5 bg-primary not-italic" aria-hidden="true" />Execution ledger</h2>
         <span className="font-mono text-[10px] text-primary">{entries.length} runs</span>
       </div>
       <div className="overflow-y-auto flex-1 py-2">

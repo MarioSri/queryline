@@ -13,10 +13,11 @@
  *   without per-cell width measurement.
  */
 
-import { useEffect, useMemo, useState } from "react";
-import { ClipboardCopy, Download, FileJson } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ClipboardCopy, Download, FileJson, Search, X } from "lucide-react";
 import { copyResultPageAsJson, downloadCsv, downloadJson } from "@/lib/csv";
 import { DEFAULT_PAGE_SIZE, loadPageSize, PAGE_SIZES, savePageSize, type PageSize } from "@/lib/preferences";
+import { filterResultRows, formatResultValue } from "@/lib/tableFilter";
 import { toast } from "sonner";
 
 interface Props {
@@ -25,20 +26,13 @@ interface Props {
   onRowRendered?: () => void;
 }
 
-function formatCell(value: unknown): string {
-  if (value === null || value === undefined) return "NULL";
-  if (typeof value === "number") {
-    if (Number.isInteger(value)) return value.toLocaleString("en-US");
-    return value.toLocaleString("en-US", { maximumFractionDigits: 4 });
-  }
-  return String(value);
-}
-
 export default function ResultsTable({ columns, rows }: Props) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<PageSize>(() => loadPageSize());
   const [sortCol, setSortCol] = useState<number | null>(null);
   const [sortAsc, setSortAsc] = useState(true);
+  const [filter, setFilter] = useState("");
+  const filterRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     savePageSize(pageSize);
@@ -46,14 +40,15 @@ export default function ResultsTable({ columns, rows }: Props) {
 
   useEffect(() => {
     setPage(1);
-  }, [rows]);
+  }, [rows, filter]);
 
-  const rowCount = rows.length;
+  const filteredRows = useMemo(() => filterResultRows(rows, filter), [rows, filter]);
+  const rowCount = filteredRows.length;
   const totalPages = Math.max(1, Math.ceil(rowCount / pageSize));
   const safePage = Math.min(page, totalPages);
 
   const sorted = useMemo(() => {
-    if (sortCol === null) return rows;
+    if (sortCol === null) return filteredRows;
     const dir = sortAsc ? 1 : -1;
     return [...rows].sort((a, b) => {
       const av = a[sortCol];
@@ -65,7 +60,7 @@ export default function ResultsTable({ columns, rows }: Props) {
       return String(av).localeCompare(String(bv)) * dir;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, sortCol, sortAsc]);
+  }, [filteredRows, sortCol, sortAsc]);
 
   const pageRows = useMemo(
     () => sorted.slice((safePage - 1) * pageSize, safePage * pageSize),
@@ -96,19 +91,53 @@ export default function ResultsTable({ columns, rows }: Props) {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between gap-3 px-4 py-2 border-b border-border/60 bg-card/60">
-        <div className="text-xs text-muted-foreground font-mono">
-          <span className="text-primary">{rowCount.toLocaleString("en-US")}</span> row{rowCount === 1 ? "" : "s"}
+      <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-border/60 bg-card/45">
+        <div className="text-xs text-muted-foreground font-mono whitespace-nowrap">
+          <span className="font-serif text-[15px] italic font-medium text-primary">{rowCount.toLocaleString("en-US")}</span> row{rowCount === 1 ? "" : "s"}
           {rowCount > pageSize ? ` · page ${safePage.toLocaleString("en-US")} of ${totalPages.toLocaleString("en-US")}` : ""}
         </div>
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="relative flex min-w-[11rem] flex-1 items-center">
+          <Search className="absolute left-2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" aria-hidden="true" />
+          <label htmlFor="result-filter" className="sr-only">Filter result rows</label>
+          <input
+            ref={filterRef}
+            id="result-filter"
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                setFilter("");
+                filterRef.current?.blur();
+              }
+            }}
+            placeholder="Filter the ledger"
+            className="w-full bg-transparent border-0 border-b border-border py-1 pl-7 pr-7 text-[11px] font-mono text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:border-primary"
+            aria-describedby="result-filter-help"
+          />
+          {filter && (
+            <button
+              type="button"
+              onClick={() => {
+                setFilter("");
+                filterRef.current?.focus();
+              }}
+              className="absolute right-1 inline-flex items-center justify-center p-1 text-muted-foreground hover:text-foreground focus:outline-none focus:ring-1 focus:ring-primary/60 rounded"
+              aria-label="Clear result filter"
+              title="Clear filter"
+            >
+              <X className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          )}
+          <span id="result-filter-help" className="sr-only">Filters every visible result cell. Press Escape to clear the filter.</span>
+        </div>
+        <div className="flex items-center border border-border/70 shrink-0 divide-x divide-border/70">
           <button
             type="button"
             onClick={() => {
               downloadCsv(`${exportBaseName}.csv`, columns, pageRows);
               toast.success("Current result page exported as CSV");
             }}
-            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-mono border border-border rounded hover:bg-accent focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors duration-150 active:scale-[0.97]"
+            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-mono text-muted-foreground hover:text-primary hover:bg-accent/35 focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors duration-150 active:scale-[0.97]"
             title="Download the current result page as CSV"
             aria-label="Download the current result page as CSV"
           >
@@ -121,7 +150,7 @@ export default function ResultsTable({ columns, rows }: Props) {
               downloadJson(`${exportBaseName}.json`, columns, pageRows);
               toast.success("Current result page exported as JSON");
             }}
-            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-mono border border-border rounded hover:bg-accent focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors duration-150 active:scale-[0.97]"
+            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-mono text-muted-foreground hover:text-primary hover:bg-accent/35 focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors duration-150 active:scale-[0.97]"
             title="Download the current result page as JSON"
             aria-label="Download the current result page as JSON"
           >
@@ -131,7 +160,7 @@ export default function ResultsTable({ columns, rows }: Props) {
           <button
             type="button"
             onClick={() => void copyJson()}
-            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-mono border border-border rounded hover:bg-accent focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors duration-150 active:scale-[0.97]"
+            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-mono text-muted-foreground hover:text-primary hover:bg-accent/35 focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors duration-150 active:scale-[0.97]"
             title="Copy the current result page as JSON"
             aria-label="Copy the current result page as JSON"
           >
@@ -139,10 +168,10 @@ export default function ResultsTable({ columns, rows }: Props) {
             <span className="hidden sm:inline">Copy</span>
           </button>
           {rowCount > DEFAULT_PAGE_SIZE && (
-            <div className="flex items-center gap-1.5">
-            <span className="text-xs text-muted-foreground">Rows/page</span>
+            <div className="flex items-center gap-1.5 px-2">
+            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Rows</span>
             <select
-              className="text-xs font-mono bg-transparent border border-border rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary/50"
+              className="text-xs font-mono bg-transparent border-0 border-b border-border px-1 py-0.5 focus:outline-none focus:border-primary"
               value={pageSize}
               onChange={(e) => {
                 setPageSize(Number(e.target.value) as PageSize);
@@ -168,13 +197,19 @@ export default function ResultsTable({ columns, rows }: Props) {
               {columns.map((col, i) => (
                 <th
                   key={`${col}-${i}`}
-                  onClick={() => handleSort(i)}
-                  className="text-left text-[10px] font-bold uppercase tracking-widest text-foreground/80 px-3 py-2.5 border-b border-border/70 cursor-pointer select-none hover:text-primary transition-colors duration-150 whitespace-nowrap"
+                  scope="col"
+                  aria-sort={sortCol === i ? (sortAsc ? "ascending" : "descending") : "none"}
+                  className="text-left text-[10px] font-bold uppercase tracking-widest text-foreground/80 px-3 py-2.5 border-b border-border/70 whitespace-nowrap"
                 >
-                  {col}
-                  {sortCol === i && (
-                    <span className="ml-1 text-primary">{sortAsc ? "▲" : "▼"}</span>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleSort(i)}
+                    className="inline-flex items-center gap-1 hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary/60 rounded"
+                    aria-label={`Sort by ${col}${sortCol === i ? (sortAsc ? ", descending next" : ", ascending next") : ""}`}
+                  >
+                    {col}
+                    {sortCol === i && <span className="text-primary" aria-hidden="true">{sortAsc ? "▲" : "▼"}</span>}
+                  </button>
                 </th>
               ))}
             </tr>
@@ -188,11 +223,11 @@ export default function ResultsTable({ columns, rows }: Props) {
                 {row.map((cell, c) => (
                   <td
                     key={c}
-                    className="px-3 py-1.5 font-mono text-[12px] border-b border-border/40 align-top whitespace-nowrap max-w-[280px] overflow-hidden text-ellipsis"
+                    className={`px-3 py-1.5 font-mono text-[12px] border-b border-border/40 align-top whitespace-nowrap max-w-[280px] overflow-hidden text-ellipsis ${c === 0 ? "text-foreground/70" : "text-foreground font-medium"}`}
                     style={{ fontVariantNumeric: "tabular-nums" }}
-                    title={formatCell(cell)}
+                    title={formatResultValue(cell)}
                   >
-                    {formatCell(cell)}
+                    {formatResultValue(cell)}
                   </td>
                 ))}
               </tr>
@@ -200,7 +235,7 @@ export default function ResultsTable({ columns, rows }: Props) {
             {pageRows.length === 0 && (
               <tr>
                 <td colSpan={columns.length + 1} className="px-3 py-8 text-center text-sm text-muted-foreground">
-                  No rows returned.
+                  {filter.trim() ? `No rows match “${filter.trim()}”. Clear the filter to restore all ${rows.length.toLocaleString("en-US")} rows.` : "No rows returned."}
                 </td>
               </tr>
             )}

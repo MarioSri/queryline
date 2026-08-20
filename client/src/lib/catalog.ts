@@ -29,3 +29,12 @@ export const SAMPLE_QUERIES: { label: string; sql: string }[] = [
   { label: "VIP customers in India", sql: "SELECT * FROM customers WHERE segment = 'VIP' AND country = 'India' ORDER BY joined_at;" },
   { label: "Average rating by category", sql: "SELECT p.category, ROUND(AVG(r.rating),2) AS avg_rating, COUNT(*) AS reviews\nFROM reviews r\nJOIN products p ON p.id = r.product_id\nGROUP BY p.category\nORDER BY avg_rating DESC;" },
 ];
+
+export const SUPPORTED_SQL: { title: string; detail: string }[] = [
+  { title: "Read-only SELECT", detail: "SELECT, DISTINCT, aliases, and * expansion. Data-changing statements are blocked." },
+  { title: "Tables and joins", detail: "FROM with table aliases; JOIN or LEFT JOIN with ON conditions." },
+  { title: "Filtering", detail: "WHERE with AND, OR, NOT, comparisons, LIKE, IN, and IS [NOT] NULL." },
+  { title: "Summaries", detail: "GROUP BY, HAVING, COUNT, SUM, AVG, MIN, MAX, and COUNT(DISTINCT ...)." },
+  { title: "Shaping results", detail: "ORDER BY aliases or positions, ASC/DESC, LIMIT, and OFFSET." },
+  { title: "Scalar functions", detail: "ROUND, substr, LOWER, UPPER, LENGTH, COALESCE, and ABS." },
+];

@@ -22,9 +22,10 @@ WebAssembly, and no SQL library.
   its execution time and row count.
 - **Portable result pages.** `client/src/lib/csv.ts` exports the current page
   as CSV or column-keyed JSON and supports a clipboard JSON copy action.
-- **Local workspace preferences.** `client/src/lib/preferences.ts` stores page
-  size and query history in browser storage, including pinned runs and
-  individual entry deletion.
+- **Browser-local workspaces.** `client/src/lib/preferences.ts` stores named
+  SQL drafts in browser storage. A workspace can be saved, selected, renamed,
+  or deleted without sending its query anywhere; page size, execution history,
+  pinned runs, and individual entry deletion persist alongside it.
 - **Deferred interface code.** The engine, editor, and result grid load behind
   explicit lazy boundaries; Vite also isolates the icon and UI dependency
   groups from the initial application chunk.
@@ -51,13 +52,20 @@ fast even when a query returns tens of thousands of rows.
 | reviews | 18,000 | ratings and review text |
 
 - **Results table** with CSV, JSON, and clipboard exports for the active page;
-  pagination (25/50/100/500 rows per page); a sticky header; and numeric
-  alignment. Only the current page is rendered, so a 50,000-row result set
-  never touches the DOM in bulk.
+  pagination (25/50/100/500 rows per page); a sticky header; numeric
+  alignment; and a keyboard-accessible text filter that narrows all visible
+  result cells and clears with Escape. Only the current page is rendered, so
+  a 50,000-row result set never touches the DOM in bulk.
 - **Schema sidebar** listing every table and column with row counts, and six
   sample queries you can load into the editor in one click.
 - **Execution ledger**: recent runs persist locally, can be restored into the
   editor, pinned to the top, or removed individually.
+- **Named workspaces**: save a draft under a deliberate name, restore it via
+  the workspace selector, rename it by editing its name and saving, or remove
+  it without affecting the execution ledger.
+- **In-product SQL reference**: the schema rail includes a compact, collapsible
+  reminder of the verified statement shapes, joins, clauses, functions, and
+  intentional limitations described below.
 - **Errors surface inline**: invalid SQL shows a plain-language message
   (the engine validates column names, table names, and clause order).
 
@@ -65,6 +73,9 @@ fast even when a query returns tens of thousands of rows.
 
 The engine is read-only by construction; the parser only understands
 SELECT statements.
+
+The same validated syntax summary appears in the console's **Supported SQL**
+panel, so an interviewer can see the scope without leaving the runner.
 
 ```
 SELECT [DISTINCT] col-exprs FROM t [alias]
@@ -164,14 +175,16 @@ client/src/
 ├── lib/engine.ts   # tokenizer, parser, executor (the SQL engine)
 ├── lib/catalog.ts  # lightweight schema and sample-query UI metadata
 ├── lib/csv.ts      # current-page CSV, JSON, and clipboard exports
-├── lib/preferences.ts # local page-size and execution-ledger state
+├── lib/preferences.ts # local page-size, ledger, and workspace state
+├── lib/tableFilter.ts # predictable case-insensitive result-cell filtering
 ├── lib/seed.ts     # CREATE TABLE + INSERT statements for the dataset
 ├── pages/Home.tsx  # console layout and lazy UI/engine boundaries
 └── components/
-    ├── QueryEditor.tsx    # editor with Ctrl+Enter and Tab indent
-    ├── ResultsTable.tsx   # paginated, memoized result grid
+    ├── QueryEditor.tsx    # editor with Ctrl+Enter, Tab indent, workspace shelf
+    ├── ResultsTable.tsx   # paginated, memoized, keyboard-filterable result grid
     ├── SchemaSidebar.tsx  # tables, columns, row counts, sample queries
     └── HistoryRail.tsx    # persistent runs, pin/delete, click to restore
+    └── WorkspaceShelf.tsx # local workspace selector and lifecycle controls
 ```
 
 ## Scope and limitations
@@ -197,8 +210,8 @@ built `dist/` output; nothing is posted to any external service.
 
 Bug reports and improvements are welcome through issues and pull requests.
 The regression contract is split across `client/src/lib/engine.test.ts`,
-`client/src/lib/csv.test.ts`, and `client/src/lib/preferences.test.ts`; keep
-all 27 tests green.
+`client/src/lib/csv.test.ts`, `client/src/lib/preferences.test.ts`, and
+`client/src/lib/tableFilter.test.ts`; keep all 29 tests green.
 
 ## License
 

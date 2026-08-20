@@ -40,3 +40,7 @@ Probability: 0.05
 - Keep the user-approved clean sans-serif “Queryline” wordmark and uploaded favicon in persistent chrome; the editorial serif treatment appears in the supporting “the execution ledger” line and the execution-rail heading instead.
 - Maintain the Ledger Light palette of warm paper, ink, hairline neutrals, and deep teal. The retained uploaded mark is hue-adjusted in the application header so it supports the teal-only accent system.
 - Treat result values and execution history as the visual hero: JetBrains Mono data, teal timing and count signals, hairline grouping, and a reserved teal rule for pinned runs.
+- The Queryline mark is always recolored into the deep teal accent family; no competing warm or red accent appears in persistent chrome.
+- The result ledger carries the strongest typographic and tonal emphasis. Side rails, drafts, and export actions remain visually quieter until the user activates them.
+- Compact controls use editorial hairline grouping and text-first actions; filled or boxed treatments are reserved for the primary Run action and dense utilities.
+- The small teal square is a recurring execution mark for active section labels, metrics, selected/pinned material, and the ledger heading.

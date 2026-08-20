@@ -7,15 +7,38 @@
 
 import { useEffect, useRef } from "react";
 import { Play, Loader2 } from "lucide-react";
+import WorkspaceShelf from "@/components/WorkspaceShelf";
+import type { QueryWorkspace } from "@/lib/preferences";
 
 interface Props {
   value: string;
   onChange: (v: string) => void;
   onRun: () => void;
   running: boolean;
+  workspaces: QueryWorkspace[];
+  activeWorkspaceId: string | null;
+  workspaceName: string;
+  onWorkspaceNameChange: (name: string) => void;
+  onLoadWorkspace: (id: string) => void;
+  onSaveWorkspace: () => void;
+  onNewWorkspace: () => void;
+  onDeleteWorkspace: () => void;
 }
 
-export default function QueryEditor({ value, onChange, onRun, running }: Props) {
+export default function QueryEditor({
+  value,
+  onChange,
+  onRun,
+  running,
+  workspaces,
+  activeWorkspaceId,
+  workspaceName,
+  onWorkspaceNameChange,
+  onLoadWorkspace,
+  onSaveWorkspace,
+  onNewWorkspace,
+  onDeleteWorkspace,
+}: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -51,6 +74,16 @@ export default function QueryEditor({ value, onChange, onRun, running }: Props) 
         placeholder="-- Write a query, then press Ctrl/Cmd+Enter&#10;SELECT * FROM orders LIMIT 50;"
         className="flex-1 w-full resize-none bg-transparent text-[13.5px] font-mono leading-relaxed text-foreground placeholder:text-muted-foreground/60 p-4 focus:outline-none"
         aria-label="SQL query input"
+      />
+      <WorkspaceShelf
+        workspaces={workspaces}
+        activeWorkspaceId={activeWorkspaceId}
+        workspaceName={workspaceName}
+        onWorkspaceNameChange={onWorkspaceNameChange}
+        onLoadWorkspace={onLoadWorkspace}
+        onSaveWorkspace={onSaveWorkspace}
+        onNewWorkspace={onNewWorkspace}
+        onDeleteWorkspace={onDeleteWorkspace}
       />
       <div className="flex items-center justify-between px-4 py-2 border-t border-border/60 bg-card/60">
         <span className="text-[11px] text-muted-foreground font-mono">
