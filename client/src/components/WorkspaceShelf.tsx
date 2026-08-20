@@ -5,7 +5,7 @@
  */
 
 import type { QueryWorkspace } from "@/lib/preferences";
-import { Bookmark, Plus, Save, Trash2 } from "lucide-react";
+import { Bookmark, CopyPlus, Link2, Plus, Save, Trash2 } from "lucide-react";
 
 interface Props {
   workspaces: QueryWorkspace[];
@@ -16,6 +16,10 @@ interface Props {
   onSaveWorkspace: () => void;
   onNewWorkspace: () => void;
   onDeleteWorkspace: () => void;
+  isDuplicateName: boolean;
+  readOnly: boolean;
+  onShareQuery: () => void;
+  onMakeEditableCopy: () => void;
 }
 
 export default function WorkspaceShelf({
@@ -27,7 +31,35 @@ export default function WorkspaceShelf({
   onSaveWorkspace,
   onNewWorkspace,
   onDeleteWorkspace,
+  isDuplicateName,
+  readOnly,
+  onShareQuery,
+  onMakeEditableCopy,
 }: Props) {
+  if (readOnly) {
+    return (
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-4 py-1.5 border-t border-border/40 bg-secondary/25">
+        <Link2 className="h-3.5 w-3.5 text-primary shrink-0" aria-hidden="true" />
+        <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Shared query · read only</span>
+        <button
+          type="button"
+          onClick={onShareQuery}
+          className="inline-flex items-center gap-1 border-l border-border/60 px-2 py-1 text-[11px] font-mono text-muted-foreground hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary/60 transition-colors duration-150 active:scale-[0.97]"
+          title="Copy this read-only query link"
+        >
+          <Link2 className="h-3 w-3" aria-hidden="true" /> Copy link
+        </button>
+        <button
+          type="button"
+          onClick={onMakeEditableCopy}
+          className="inline-flex items-center gap-1 border-l border-border/60 px-2 py-1 text-[11px] font-mono text-muted-foreground hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary/60 transition-colors duration-150 active:scale-[0.97]"
+        >
+          <CopyPlus className="h-3 w-3" aria-hidden="true" /> Make editable copy
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-4 py-1.5 border-t border-border/40 bg-secondary/25">
       <Bookmark className="h-3.5 w-3.5 text-primary shrink-0" aria-hidden="true" />
@@ -57,14 +89,17 @@ export default function WorkspaceShelf({
         onChange={(event) => onWorkspaceNameChange(event.target.value)}
         placeholder="Workspace name"
         className="min-w-[7rem] flex-1 bg-transparent border-b border-border px-1 py-1 text-[11px] font-mono text-foreground placeholder:text-muted-foreground/65 focus:outline-none focus:border-primary"
-        aria-describedby="workspace-help"
+        aria-describedby={isDuplicateName ? "workspace-help workspace-name-error" : "workspace-help"}
+        aria-invalid={isDuplicateName}
       />
       <span id="workspace-help" className="sr-only">Save stores this SQL locally. Editing the name then saving renames the active workspace.</span>
+      {isDuplicateName && <span id="workspace-name-error" role="alert" className="text-[10px] font-mono text-destructive">A workspace already uses this name.</span>}
       <button
         type="button"
         onClick={onSaveWorkspace}
+        disabled={isDuplicateName || !workspaceName.trim()}
         title={activeWorkspaceId ? "Save query changes and workspace name" : "Save this query as a workspace"}
-        className="inline-flex items-center gap-1 border-l border-border/60 px-2 py-1 text-[11px] font-mono text-muted-foreground hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary/60 transition-colors duration-150 active:scale-[0.97]"
+        className="inline-flex items-center gap-1 border-l border-border/60 px-2 py-1 text-[11px] font-mono text-muted-foreground hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary/60 disabled:opacity-35 disabled:pointer-events-none transition-colors duration-150 active:scale-[0.97]"
       >
         <Save className="h-3 w-3" aria-hidden="true" />
         Save
@@ -77,6 +112,15 @@ export default function WorkspaceShelf({
       >
         <Plus className="h-3 w-3" aria-hidden="true" />
         New
+      </button>
+      <button
+        type="button"
+        onClick={onShareQuery}
+        title="Copy a read-only link for this SQL draft"
+        className="inline-flex items-center gap-1 border-l border-border/60 px-2 py-1 text-[11px] font-mono text-muted-foreground hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary/60 transition-colors duration-150 active:scale-[0.97]"
+      >
+        <Link2 className="h-3 w-3" aria-hidden="true" />
+        Share
       </button>
       <button
         type="button"

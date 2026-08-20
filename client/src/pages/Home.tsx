@@ -8,8 +8,9 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import SchemaSidebar from "@/components/SchemaSidebar";
 import HistoryRail from "@/components/HistoryRail";
 import type { QueryResult } from "@/lib/engine";
-import { deleteHistoryEntry, deleteWorkspace, loadHistory, loadWorkspaces, saveHistory, saveWorkspaces, toggleHistoryPin, upsertWorkspace, type QueryHistoryEntry } from "@/lib/preferences";
+import { deleteHistoryEntry, deleteWorkspace, findDuplicateWorkspace, loadHistory, loadWorkspaces, saveHistory, saveWorkspaces, toggleHistoryPin, upsertWorkspace, type QueryHistoryEntry } from "@/lib/preferences";
 import { SAMPLE_QUERIES } from "@/lib/catalog";
+import { copySharedQueryLink, readSharedQueryFromUrl, removeSharedQueryFromUrl } from "@/lib/shareLink";
 import { toast } from "sonner";
 import { AlertTriangle, Timer, Rows3, Loader2 } from "lucide-react";
 
@@ -28,7 +29,9 @@ function createWorkspaceId(): string {
 }
 
 export default function Home() {
-  const [sql, setSql] = useState(SAMPLE_QUERIES[1].sql);
+  const [sharedQuery] = useState(() => (typeof window === "undefined" ? null : readSharedQueryFromUrl(window.location.href)));
+  const [sharedReadOnly, setSharedReadOnly] = useState(() => sharedQuery !== null);
+  const [sql, setSql] = useState(() => sharedQuery ?? SAMPLE_QUERIES[1].sql);
   const [result, setResult] = useState<QueryResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
@@ -37,7 +40,7 @@ export default function Home() {
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   const [workspaceName, setWorkspaceName] = useState("Untitled query");
   const [counts, setCounts] = useState<Record<string, number>>({});
-  const [dividerY, setDividerY] = useState(42); // editor share %
+  const [dividerY, setDividerY] = useState(36); // editor share %; results deliberately lead the console
   const [compactPanel, setCompactPanel] = useState<"schema" | "history" | null>(null);
   const dragRef = useRef<{ startY: number; startShare: number } | null>(null);
   const idRef = useRef(history.reduce((highestId, entry) => Math.max(highestId, entry.id), 0));
@@ -103,8 +106,12 @@ export default function Home() {
   useEffect(() => {
     if (autoRunRef.current) return;
     autoRunRef.current = true;
-    void run(SAMPLE_QUERIES[1].sql);
+    void run(sql);
   }, [run]);
+
+  useEffect(() => {
+    if (sharedQuery) toast("Shared query loaded as read-only. Make an editable copy to change it.");
+  }, [sharedQuery]);
 
   useEffect(() => {
     saveHistory(history);
@@ -114,8 +121,20 @@ export default function Home() {
     saveWorkspaces(workspaces);
   }, [workspaces]);
 
-  const restore = useCallback((s: string) => setSql(s), []);
-  const insertToken = useCallback((token: string) => setSql((s) => s + token), []);
+  const restore = useCallback((s: string) => {
+    if (sharedReadOnly) {
+      toast.error("This shared query is read-only. Make an editable copy first.");
+      return;
+    }
+    setSql(s);
+  }, [sharedReadOnly]);
+  const insertToken = useCallback((token: string) => {
+    if (sharedReadOnly) {
+      toast.error("This shared query is read-only. Make an editable copy first.");
+      return;
+    }
+    setSql((s) => s + token);
+  }, [sharedReadOnly]);
   const togglePin = useCallback((id: number) => {
     setHistory((entries) => toggleHistoryPin(entries, id));
   }, []);
@@ -124,13 +143,17 @@ export default function Home() {
     toast.success("Saved query removed");
   }, []);
   const loadWorkspace = useCallback((id: string) => {
+    if (sharedReadOnly) {
+      toast.error("This shared query is read-only. Make an editable copy first.");
+      return;
+    }
     const workspace = workspaces.find((item) => item.id === id);
     if (!workspace) return;
     setSql(workspace.sql);
     setActiveWorkspaceId(workspace.id);
     setWorkspaceName(workspace.name);
     toast.success(`Loaded workspace: ${workspace.name}`);
-  }, [workspaces]);
+  }, [sharedReadOnly, workspaces]);
   const saveWorkspace = useCallback(() => {
     const trimmedName = workspaceName.trim() || "Untitled query";
     const active = workspaces.find((item) => item.id === activeWorkspaceId);
@@ -144,6 +167,10 @@ export default function Home() {
     };
     if (!workspace.sql) {
       toast.error("Write a SELECT query before saving a workspace.");
+      return;
+    }
+    if (findDuplicateWorkspace(workspaces, trimmedName, activeWorkspaceId)) {
+      toast.error(`A workspace named “${trimmedName}” already exists. Choose another name.`);
       return;
     }
     setWorkspaces((entries) => upsertWorkspace(entries, workspace));
@@ -163,6 +190,25 @@ export default function Home() {
     setWorkspaceName("Untitled query");
     toast.success("Workspace deleted");
   }, [activeWorkspaceId]);
+  const duplicateWorkspace = useMemo(
+    () => findDuplicateWorkspace(workspaces, workspaceName, activeWorkspaceId),
+    [activeWorkspaceId, workspaceName, workspaces]
+  );
+  const shareQuery = useCallback(async () => {
+    try {
+      await copySharedQueryLink(sql, window.location.href);
+      toast.success("Read-only query link copied");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not create a share link.");
+    }
+  }, [sql]);
+  const makeEditableCopy = useCallback(() => {
+    setSharedReadOnly(false);
+    setActiveWorkspaceId(null);
+    setWorkspaceName("Shared query copy");
+    if (typeof window !== "undefined") window.history.replaceState({}, "", removeSharedQueryFromUrl(window.location.href));
+    toast.success("Editable query copy ready. Name it and save when needed.");
+  }, []);
 
   const metrics = useMemo(() => {
     if (!result) return null;
@@ -178,7 +224,8 @@ export default function Home() {
             <img
               src="/manus-storage/queryline-logo_e1a45a25.png"
               alt="Queryline logo"
-              className="h-6 w-6 rounded-[3px] object-contain brightness-0 saturate-100 invert-[30%] sepia-[18%] saturate-[3000%] hue-rotate-[143deg] brightness-[90%] contrast-[88%]"
+              className="h-6 w-6 rounded-[3px] object-contain"
+              style={{ filter: "brightness(0) saturate(100%) invert(30%) sepia(19%) saturate(3100%) hue-rotate(143deg) brightness(90%) contrast(92%)" }}
             />
             <h1 className="font-semibold text-lg tracking-tight text-foreground">
               Queryline
@@ -231,9 +278,13 @@ export default function Home() {
             counts={counts}
             onInsertTable={(token) => {
               insertToken(token);
-              setCompactPanel(null);
+              if (!sharedReadOnly) setCompactPanel(null);
             }}
             onLoadSample={(label, query) => {
+              if (sharedReadOnly) {
+                toast.error("This shared query is read-only. Make an editable copy first.");
+                return;
+              }
               setSql(query);
               setCompactPanel(null);
               toast(`Loaded: ${label}`);
@@ -264,6 +315,10 @@ export default function Home() {
           counts={counts}
           onInsertTable={insertToken}
           onLoadSample={(label, s) => {
+            if (sharedReadOnly) {
+              toast.error("This shared query is read-only. Make an editable copy first.");
+              return;
+            }
             setSql(s);
             toast(`Loaded: ${label}`);
           }}
@@ -289,7 +344,7 @@ export default function Home() {
           }}
         >
           {/* Editor pane */}
-          <div className="flex flex-col border-b border-border/70" style={{ height: `${dividerY}%` }}>
+          <div className="flex flex-col border-b border-border/70 bg-secondary/[0.12]" style={{ height: `${dividerY}%` }}>
             <div className="px-4 py-1.5 border-b border-border/40 flex items-center gap-2 bg-secondary/35 shrink-0">
               <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Query draft</span>
               {running && (
@@ -312,6 +367,10 @@ export default function Home() {
                 onSaveWorkspace={saveWorkspace}
                 onNewWorkspace={newWorkspace}
                 onDeleteWorkspace={removeWorkspace}
+                isDuplicateWorkspaceName={Boolean(duplicateWorkspace)}
+                readOnly={sharedReadOnly}
+                onShareQuery={() => void shareQuery()}
+                onMakeEditableCopy={makeEditableCopy}
               />
             </Suspense>
           </div>
@@ -329,10 +388,10 @@ export default function Home() {
           </div>
 
           {/* Results pane */}
-          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-            <div className="px-4 py-1.5 border-b border-border/40 bg-secondary/35 shrink-0 flex items-center gap-2">
+          <div className="flex-[1.18] flex flex-col min-h-0 overflow-hidden bg-background">
+            <div className="px-4 py-1.5 border-b border-border/40 bg-primary/[0.035] shrink-0 flex items-center gap-2">
               <span className="inline-block h-1.5 w-1.5 bg-primary translate-y-[-1px]" aria-hidden="true" />
-              <span className="text-[11px] font-semibold uppercase tracking-widest text-foreground">Results</span>
+              <span className="text-[11px] font-semibold uppercase tracking-widest text-foreground">Results ledger</span>
               {error && (
                 <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-destructive font-mono">
                   <AlertTriangle className="h-3 w-3" /> {error}

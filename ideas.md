@@ -44,3 +44,5 @@ Probability: 0.05
 - The result ledger carries the strongest typographic and tonal emphasis. Side rails, drafts, and export actions remain visually quieter until the user activates them.
 - Compact controls use editorial hairline grouping and text-first actions; filled or boxed treatments are reserved for the primary Run action and dense utilities.
 - The small teal square is a recurring execution mark for active section labels, metrics, selected/pinned material, and the ledger heading.
+- Preserve the user-provided logo artwork as a silhouette, but apply a direct teal color transform in persistent chrome so its source colors never introduce a competing accent.
+- Favor a larger result pane and its tabular timing, counts, and values over the draft and auxiliary rails; secondary exports and workspace actions remain text-first hairline controls.

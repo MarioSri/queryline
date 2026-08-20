@@ -34,6 +34,10 @@ const WORKSPACES_KEY = "queryline.workspaces.v1";
 const MAX_HISTORY = 50;
 const MAX_WORKSPACES = 25;
 
+export function workspaceNameKey(name: string): string {
+  return name.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+}
+
 function storage(): Storage | null {
   if (typeof window === "undefined") return null;
   try {
@@ -142,12 +146,22 @@ function sortWorkspaces(entries: QueryWorkspace[]): QueryWorkspace[] {
   return [...entries].sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
+function uniqueWorkspaceNames(entries: QueryWorkspace[]): QueryWorkspace[] {
+  const seen = new Set<string>();
+  return sortWorkspaces(entries).filter((workspace) => {
+    const key = workspaceNameKey(workspace.name);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function parseWorkspaces(value: string | null): QueryWorkspace[] {
   if (!value) return [];
   try {
     const parsed: unknown = JSON.parse(value);
     if (!Array.isArray(parsed)) return [];
-    return sortWorkspaces(parsed.filter(isWorkspace).map(normalizeWorkspace)).slice(0, MAX_WORKSPACES);
+    return uniqueWorkspaceNames(parsed.filter(isWorkspace).map(normalizeWorkspace)).slice(0, MAX_WORKSPACES);
   } catch {
     return [];
   }
@@ -163,7 +177,7 @@ export function loadWorkspaces(): QueryWorkspace[] {
 
 export function saveWorkspaces(entries: QueryWorkspace[]): void {
   try {
-    storage()?.setItem(WORKSPACES_KEY, JSON.stringify(sortWorkspaces(entries.filter(isWorkspace).map(normalizeWorkspace)).slice(0, MAX_WORKSPACES)));
+    storage()?.setItem(WORKSPACES_KEY, JSON.stringify(uniqueWorkspaceNames(entries.filter(isWorkspace).map(normalizeWorkspace)).slice(0, MAX_WORKSPACES)));
   } catch {
     // Workspace persistence is optional; editing continues if storage is unavailable.
   }
@@ -171,7 +185,14 @@ export function saveWorkspaces(entries: QueryWorkspace[]): void {
 
 export function upsertWorkspace(entries: QueryWorkspace[], workspace: QueryWorkspace): QueryWorkspace[] {
   if (!isWorkspace(workspace)) return entries;
-  return sortWorkspaces([normalizeWorkspace(workspace), ...entries.filter((entry) => entry.id !== workspace.id)]).slice(0, MAX_WORKSPACES);
+  if (findDuplicateWorkspace(entries, workspace.name, workspace.id)) return entries;
+  return uniqueWorkspaceNames([normalizeWorkspace(workspace), ...entries.filter((entry) => entry.id !== workspace.id)]).slice(0, MAX_WORKSPACES);
+}
+
+export function findDuplicateWorkspace(entries: QueryWorkspace[], name: string, exceptId: string | null = null): QueryWorkspace | undefined {
+  const key = workspaceNameKey(name);
+  if (!key) return undefined;
+  return entries.find((workspace) => workspace.id !== exceptId && workspaceNameKey(workspace.name) === key);
 }
 
 export function deleteWorkspace(entries: QueryWorkspace[], id: string): QueryWorkspace[] {

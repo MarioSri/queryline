@@ -14,10 +14,10 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ClipboardCopy, Download, FileJson, Search, X } from "lucide-react";
+import { ClipboardCopy, Download, FileJson, ListFilter, Search, X } from "lucide-react";
 import { copyResultPageAsJson, downloadCsv, downloadJson } from "@/lib/csv";
 import { DEFAULT_PAGE_SIZE, loadPageSize, PAGE_SIZES, savePageSize, type PageSize } from "@/lib/preferences";
-import { filterResultRows, formatResultValue } from "@/lib/tableFilter";
+import { activeColumnFilterCount, filterResultRows, formatResultValue, type ColumnFilters } from "@/lib/tableFilter";
 import { toast } from "sonner";
 
 interface Props {
@@ -32,6 +32,8 @@ export default function ResultsTable({ columns, rows }: Props) {
   const [sortCol, setSortCol] = useState<number | null>(null);
   const [sortAsc, setSortAsc] = useState(true);
   const [filter, setFilter] = useState("");
+  const [columnFilters, setColumnFilters] = useState<ColumnFilters>({});
+  const [showColumnFilters, setShowColumnFilters] = useState(false);
   const filterRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -40,17 +42,25 @@ export default function ResultsTable({ columns, rows }: Props) {
 
   useEffect(() => {
     setPage(1);
-  }, [rows, filter]);
+  }, [rows, filter, columnFilters]);
 
-  const filteredRows = useMemo(() => filterResultRows(rows, filter), [rows, filter]);
+  useEffect(() => {
+    setColumnFilters((previous) => {
+      const next = Object.fromEntries(Object.entries(previous).filter(([index, value]) => Number(index) < columns.length && value.trim())) as ColumnFilters;
+      return Object.keys(next).length === Object.keys(previous).length ? previous : next;
+    });
+  }, [columns]);
+
+  const filteredRows = useMemo(() => filterResultRows(rows, filter, columnFilters), [rows, filter, columnFilters]);
   const rowCount = filteredRows.length;
+  const columnFilterCount = activeColumnFilterCount(columnFilters);
   const totalPages = Math.max(1, Math.ceil(rowCount / pageSize));
   const safePage = Math.min(page, totalPages);
 
   const sorted = useMemo(() => {
     if (sortCol === null) return filteredRows;
     const dir = sortAsc ? 1 : -1;
-    return [...rows].sort((a, b) => {
+    return [...filteredRows].sort((a, b) => {
       const av = a[sortCol];
       const bv = b[sortCol];
       if (av === bv) return 0;
@@ -89,11 +99,26 @@ export default function ResultsTable({ columns, rows }: Props) {
     }
   };
 
+  const updateColumnFilter = (index: number, value: string) => {
+    setColumnFilters((previous) => {
+      const next = { ...previous };
+      if (value) next[index] = value;
+      else delete next[index];
+      return next;
+    });
+  };
+
+  const clearFilters = () => {
+    setFilter("");
+    setColumnFilters({});
+    filterRef.current?.focus();
+  };
+
   return (
     <div className="flex flex-col h-full">
-      <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-border/60 bg-card/45">
+      <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-border/60 bg-primary/[0.025]">
         <div className="text-xs text-muted-foreground font-mono whitespace-nowrap">
-          <span className="font-serif text-[15px] italic font-medium text-primary">{rowCount.toLocaleString("en-US")}</span> row{rowCount === 1 ? "" : "s"}
+          <span className="font-mono text-[15px] font-semibold tabular-nums text-primary">{rowCount.toLocaleString("en-US")}</span> row{rowCount === 1 ? "" : "s"}
           {rowCount > pageSize ? ` · page ${safePage.toLocaleString("en-US")} of ${totalPages.toLocaleString("en-US")}` : ""}
         </div>
         <div className="relative flex min-w-[11rem] flex-1 items-center">
@@ -114,23 +139,31 @@ export default function ResultsTable({ columns, rows }: Props) {
             className="w-full bg-transparent border-0 border-b border-border py-1 pl-7 pr-7 text-[11px] font-mono text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:border-primary"
             aria-describedby="result-filter-help"
           />
-          {filter && (
+          {(filter || columnFilterCount > 0) && (
             <button
               type="button"
-              onClick={() => {
-                setFilter("");
-                filterRef.current?.focus();
-              }}
+              onClick={clearFilters}
               className="absolute right-1 inline-flex items-center justify-center p-1 text-muted-foreground hover:text-foreground focus:outline-none focus:ring-1 focus:ring-primary/60 rounded"
-              aria-label="Clear result filter"
-              title="Clear filter"
+              aria-label="Clear all result filters"
+              title="Clear all filters"
             >
               <X className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
           )}
           <span id="result-filter-help" className="sr-only">Filters every visible result cell. Press Escape to clear the filter.</span>
         </div>
-        <div className="flex items-center border border-border/70 shrink-0 divide-x divide-border/70">
+        <button
+          type="button"
+          onClick={() => setShowColumnFilters((visible) => !visible)}
+          aria-expanded={showColumnFilters}
+          aria-controls="column-filter-row"
+          className={`inline-flex items-center gap-1 px-2 py-1 text-[11px] font-mono text-muted-foreground hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary/60 transition-colors duration-150 ${showColumnFilters || columnFilterCount > 0 ? "text-primary" : ""}`}
+          title="Filter individual columns"
+        >
+          <ListFilter className="h-3.5 w-3.5" aria-hidden="true" />
+          Columns{columnFilterCount > 0 ? ` (${columnFilterCount})` : ""}
+        </button>
+        <div className="flex items-center border-l border-border/70 shrink-0 divide-x divide-border/70">
           <button
             type="button"
             onClick={() => {
@@ -199,7 +232,7 @@ export default function ResultsTable({ columns, rows }: Props) {
                   key={`${col}-${i}`}
                   scope="col"
                   aria-sort={sortCol === i ? (sortAsc ? "ascending" : "descending") : "none"}
-                  className="text-left text-[10px] font-bold uppercase tracking-widest text-foreground/80 px-3 py-2.5 border-b border-border/70 whitespace-nowrap"
+                  className="text-left text-[10px] font-mono font-bold uppercase tracking-widest text-foreground/85 px-3 py-2.5 border-b border-border/70 whitespace-nowrap"
                 >
                   <button
                     type="button"
@@ -213,6 +246,29 @@ export default function ResultsTable({ columns, rows }: Props) {
                 </th>
               ))}
             </tr>
+            {showColumnFilters && (
+              <tr id="column-filter-row" className="bg-card/70">
+                <th className="border-b border-border/70" aria-hidden="true" />
+                {columns.map((col, index) => (
+                  <th key={`${col}-${index}-filter`} className="px-3 py-1.5 border-b border-border/70">
+                    <label htmlFor={`column-filter-${index}`} className="sr-only">Filter {col} column</label>
+                    <input
+                      id={`column-filter-${index}`}
+                      value={columnFilters[index] ?? ""}
+                      onChange={(event) => updateColumnFilter(index, event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          updateColumnFilter(index, "");
+                          event.currentTarget.blur();
+                        }
+                      }}
+                      placeholder={`Filter ${col}`}
+                      className="w-full min-w-[7rem] bg-transparent border-0 border-b border-border px-1 py-1 text-[11px] font-mono font-normal normal-case tracking-normal text-foreground placeholder:text-muted-foreground/65 focus:outline-none focus:border-primary"
+                    />
+                  </th>
+                ))}
+              </tr>
+            )}
           </thead>
           <tbody>
             {pageRows.map((row, r) => (
@@ -235,7 +291,7 @@ export default function ResultsTable({ columns, rows }: Props) {
             {pageRows.length === 0 && (
               <tr>
                 <td colSpan={columns.length + 1} className="px-3 py-8 text-center text-sm text-muted-foreground">
-                  {filter.trim() ? `No rows match “${filter.trim()}”. Clear the filter to restore all ${rows.length.toLocaleString("en-US")} rows.` : "No rows returned."}
+                  {filter.trim() || columnFilterCount > 0 ? `No rows match the active filters. Clear filters to restore all ${rows.length.toLocaleString("en-US")} rows.` : "No rows returned."}
                 </td>
               </tr>
             )}

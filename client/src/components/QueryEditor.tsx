@@ -23,6 +23,10 @@ interface Props {
   onSaveWorkspace: () => void;
   onNewWorkspace: () => void;
   onDeleteWorkspace: () => void;
+  isDuplicateWorkspaceName: boolean;
+  readOnly: boolean;
+  onShareQuery: () => void;
+  onMakeEditableCopy: () => void;
 }
 
 export default function QueryEditor({
@@ -38,6 +42,10 @@ export default function QueryEditor({
   onSaveWorkspace,
   onNewWorkspace,
   onDeleteWorkspace,
+  isDuplicateWorkspaceName,
+  readOnly,
+  onShareQuery,
+  onMakeEditableCopy,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -49,6 +57,7 @@ export default function QueryEditor({
         e.preventDefault();
         onRun();
       }
+      if (readOnly) return;
       if (e.key === "Tab") {
         e.preventDefault();
         const start = el.selectionStart;
@@ -62,7 +71,7 @@ export default function QueryEditor({
     };
     el.addEventListener("keydown", handleKey);
     return () => el.removeEventListener("keydown", handleKey);
-  }, [value, onChange, onRun]);
+  }, [value, onChange, onRun, readOnly]);
 
   return (
     <div className="relative flex flex-col h-full">
@@ -70,6 +79,7 @@ export default function QueryEditor({
         ref={ref}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        readOnly={readOnly}
         spellCheck={false}
         placeholder="-- Write a query, then press Ctrl/Cmd+Enter&#10;SELECT * FROM orders LIMIT 50;"
         className="flex-1 w-full resize-none bg-transparent text-[13.5px] font-mono leading-relaxed text-foreground placeholder:text-muted-foreground/60 p-4 focus:outline-none"
@@ -84,6 +94,10 @@ export default function QueryEditor({
         onSaveWorkspace={onSaveWorkspace}
         onNewWorkspace={onNewWorkspace}
         onDeleteWorkspace={onDeleteWorkspace}
+        isDuplicateName={isDuplicateWorkspaceName}
+        readOnly={readOnly}
+        onShareQuery={onShareQuery}
+        onMakeEditableCopy={onMakeEditableCopy}
       />
       <div className="flex items-center justify-between px-4 py-2 border-t border-border/60 bg-card/60">
         <span className="text-[11px] text-muted-foreground font-mono">

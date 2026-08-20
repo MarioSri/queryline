@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PAGE_SIZE, deleteHistoryEntry, deleteWorkspace, parseHistory, parsePageSize, parseWorkspaces, toggleHistoryPin, upsertWorkspace } from "./preferences";
+import { DEFAULT_PAGE_SIZE, deleteHistoryEntry, deleteWorkspace, findDuplicateWorkspace, parseHistory, parsePageSize, parseWorkspaces, toggleHistoryPin, upsertWorkspace } from "./preferences";
 
 describe("Queryline preferences", () => {
   it("accepts only supported page sizes", () => {
@@ -33,5 +33,15 @@ describe("Queryline preferences", () => {
     const updated = upsertWorkspace(saved, { id: "revenue", name: "Revenue 2026", sql: "SELECT 2", createdAt: 10, updatedAt: 40 });
     expect(updated).toEqual([{ id: "revenue", name: "Revenue 2026", sql: "SELECT 2", createdAt: 10, updatedAt: 40 }]);
     expect(deleteWorkspace(updated, "revenue")).toEqual([]);
+  });
+
+  it("rejects duplicate workspace names case-insensitively while allowing an active workspace rename", () => {
+    const saved = parseWorkspaces(JSON.stringify([
+      { id: "revenue", name: "Monthly Revenue", sql: "SELECT 1", createdAt: 10, updatedAt: 20 },
+      { id: "orders", name: "Orders", sql: "SELECT 2", createdAt: 10, updatedAt: 15 },
+    ]));
+    expect(findDuplicateWorkspace(saved, " monthly   revenue ")?.id).toBe("revenue");
+    expect(findDuplicateWorkspace(saved, "Monthly Revenue", "revenue")).toBeUndefined();
+    expect(upsertWorkspace(saved, { id: "copy", name: "MONTHLY revenue", sql: "SELECT 3", createdAt: 30, updatedAt: 30 })).toEqual(saved);
   });
 });
