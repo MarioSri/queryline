@@ -13,16 +13,16 @@
  *   without per-cell width measurement.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Download } from "lucide-react";
+import { downloadCsv } from "@/lib/csv";
+import { DEFAULT_PAGE_SIZE, loadPageSize, PAGE_SIZES, savePageSize, type PageSize } from "@/lib/preferences";
 
 interface Props {
   columns: string[];
   rows: unknown[][];
   onRowRendered?: () => void;
 }
-
-const PAGE_SIZES = [25, 50, 100, 500];
-const DEFAULT_PAGE_SIZE = 50;
 
 function formatCell(value: unknown): string {
   if (value === null || value === undefined) return "NULL";
@@ -35,9 +35,17 @@ function formatCell(value: unknown): string {
 
 export default function ResultsTable({ columns, rows }: Props) {
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [pageSize, setPageSize] = useState<PageSize>(() => loadPageSize());
   const [sortCol, setSortCol] = useState<number | null>(null);
   const [sortAsc, setSortAsc] = useState(true);
+
+  useEffect(() => {
+    savePageSize(pageSize);
+  }, [pageSize]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [rows]);
 
   const rowCount = rows.length;
   const totalPages = Math.max(1, Math.ceil(rowCount / pageSize));
@@ -75,19 +83,29 @@ export default function ResultsTable({ columns, rows }: Props) {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-border/60 bg-card/60">
+      <div className="flex items-center justify-between gap-3 px-4 py-2 border-b border-border/60 bg-card/60">
         <div className="text-xs text-muted-foreground font-mono">
           {rowCount.toLocaleString("en-US")} row{rowCount === 1 ? "" : "s"}
           {rowCount > pageSize ? ` · page ${safePage.toLocaleString("en-US")} of ${totalPages.toLocaleString("en-US")}` : ""}
         </div>
-        {rowCount > DEFAULT_PAGE_SIZE && (
-          <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => downloadCsv(`queryline-page-${safePage}-of-${totalPages}.csv`, columns, pageRows)}
+            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-mono border border-border rounded hover:bg-accent focus:outline-none focus:ring-1 focus:ring-primary/50 transition-colors duration-150 active:scale-[0.97]"
+            title="Download the current result page as CSV"
+          >
+            <Download className="h-3 w-3" aria-hidden="true" />
+            <span className="hidden sm:inline">CSV</span>
+          </button>
+          {rowCount > DEFAULT_PAGE_SIZE && (
+            <div className="flex items-center gap-1.5">
             <span className="text-xs text-muted-foreground">Rows/page</span>
             <select
               className="text-xs font-mono bg-transparent border border-border rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary/50"
               value={pageSize}
               onChange={(e) => {
-                setPageSize(Number(e.target.value));
+                setPageSize(Number(e.target.value) as PageSize);
                 setPage(1);
               }}
             >
@@ -97,8 +115,9 @@ export default function ResultsTable({ columns, rows }: Props) {
                 </option>
               ))}
             </select>
-          </div>
-        )}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="overflow-auto flex-1">

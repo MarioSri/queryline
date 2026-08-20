@@ -5,7 +5,7 @@
  * nod to the kind of product Atlan builds).
  */
 
-import { TABLES, type TableMeta } from "@/lib/seed";
+import { TABLES, type TableMeta } from "@/lib/catalog";
 import { Table2, ChevronDown } from "lucide-react";
 import { useState } from "react";
 

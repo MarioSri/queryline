@@ -5,7 +5,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { executeQuery, getRowCount, getTableCounts, tokenize, validateStatement } from "./engine";
-import { SAMPLE_QUERIES, TABLES } from "./seed";
+import { SAMPLE_QUERIES, TABLES } from "./catalog";
 
 function col(rows: unknown[][], name: string): (string | number)[] {
   return rows.map((r) => r[0] as string | number);

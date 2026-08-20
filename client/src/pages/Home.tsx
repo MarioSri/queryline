@@ -9,19 +9,11 @@ import QueryEditor from "@/components/QueryEditor";
 import ResultsTable from "@/components/ResultsTable";
 import SchemaSidebar from "@/components/SchemaSidebar";
 import HistoryRail from "@/components/HistoryRail";
-import { executeQuery, type QueryResult } from "@/lib/engine";
-import { SAMPLE_QUERIES } from "@/lib/seed";
+import type { QueryResult } from "@/lib/engine";
+import { loadHistory, saveHistory, type QueryHistoryEntry } from "@/lib/preferences";
+import { SAMPLE_QUERIES } from "@/lib/catalog";
 import { toast } from "sonner";
 import { AlertTriangle, Timer, Rows3, Loader2 } from "lucide-react";
-
-interface HistoryEntry {
-  id: number;
-  label: string;
-  sql: string;
-  elapsedMs: number;
-  rowCount: number;
-  ts: string;
-}
 
 function clock(): string {
   const d = new Date();
@@ -33,14 +25,22 @@ export default function Home() {
   const [result, setResult] = useState<QueryResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [history, setHistory] = useState<QueryHistoryEntry[]>(() => loadHistory());
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [dividerY, setDividerY] = useState(42); // editor share %
   const [compactPanel, setCompactPanel] = useState<"schema" | "history" | null>(null);
   const dragRef = useRef<{ startY: number; startShare: number } | null>(null);
-  const idRef = useRef(0);
+  const idRef = useRef(history.reduce((highestId, entry) => Math.max(highestId, entry.id), 0));
   const loadedRef = useRef(false);
   const autoRunRef = useRef(false);
+  const enginePromiseRef = useRef<Promise<typeof import("@/lib/engine")> | null>(null);
+
+  const loadEngine = useCallback(() => {
+    if (!enginePromiseRef.current) {
+      enginePromiseRef.current = import("@/lib/engine");
+    }
+    return enginePromiseRef.current;
+  }, []);
 
   const run = useCallback(async (queryText?: string) => {
     const text = (queryText ?? sql).trim();
@@ -51,6 +51,7 @@ export default function Home() {
     setRunning(true);
     setError(null);
     try {
+      const { executeQuery } = await loadEngine();
       const r = await executeQuery(text);
       setResult(r);
       if (!loadedRef.current) {
@@ -83,7 +84,7 @@ export default function Home() {
     } finally {
       setRunning(false);
     }
-  }, [sql]);
+  }, [loadEngine, sql]);
 
   // Open the console as a populated ledger once, after the component mounts.
   // Effects keep this state change out of the render phase and the ref avoids
@@ -93,6 +94,10 @@ export default function Home() {
     autoRunRef.current = true;
     void run(SAMPLE_QUERIES[1].sql);
   }, [run]);
+
+  useEffect(() => {
+    saveHistory(history);
+  }, [history]);
 
   const restore = useCallback((s: string) => setSql(s), []);
   const insertToken = useCallback((token: string) => setSql((s) => s + token), []);
