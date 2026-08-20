@@ -52,3 +52,9 @@ Probability: 0.05
 - After each successful run, the result ledger is the clearest destination: its title, count, timing, rule treatment, and usable space outrank editor chrome and supporting rails.
 - Workspace, sharing, archive, preset, and export utilities stay ink-neutral and text-first; teal marks only execution, selection, pinned history, and key result facts.
 - Product microcopy reads as an understated engineering notebook: concise, factual, and ledger-oriented rather than generic encouragement.
+- The result ledger remains the unmistakable post-run destination: use its teal rule, key metrics, editorial heading, and table readability to outrank the query draft and audit rail.
+- Controls stay text-first and ink-neutral by default. Fraunces is reserved for named ledger moments; JetBrains Mono carries query, result, metric, and history data; Public Sans supports quiet utility UI.
+
+- Execution history leads with tabular time, row count, timestamp, and pin state; the restored SQL text is deliberately secondary audit texture.
+- The post-run ledger receives the strongest teal rule, count treatment, table header contrast, and editorial heading. Query drafting and filing utilities remain quieter until directly used.
+- Workspace, preset, archive, and export controls are treated as thin notebook instruments. The filled Run control remains the dominant command.

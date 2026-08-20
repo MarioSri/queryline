@@ -5,10 +5,12 @@
  * and instant cursor feedback.
  * Design alignment: Ledger Light keeps keyboard knowledge close to the editor
  * in a compact, focused reference rather than competing with the query surface.
+ * Searchable commands compress routine console actions into one quiet entry point.
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Keyboard, Play, Loader2 } from "lucide-react";
+import CommandPalette, { type CommandPaletteAction } from "@/components/CommandPalette";
 import WorkspaceShelf from "@/components/WorkspaceShelf";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import type { QueryWorkspace, WorkspaceRevision } from "@/lib/preferences";
@@ -26,6 +28,10 @@ interface Props {
   workspaceLabel: string;
   onWorkspaceLabelChange: (label: string) => void;
   workspaceLabels: string[];
+  workspaceSearch: string;
+  onWorkspaceSearchChange: (search: string) => void;
+  activeLabelFilters: string[];
+  onActiveLabelFiltersChange: (labels: string[]) => void;
   onLoadWorkspace: (id: string) => void;
   onSaveWorkspace: () => void;
   onNewWorkspace: () => void;
@@ -56,6 +62,10 @@ export default function QueryEditor({
   workspaceLabel,
   onWorkspaceLabelChange,
   workspaceLabels,
+  workspaceSearch,
+  onWorkspaceSearchChange,
+  activeLabelFilters,
+  onActiveLabelFiltersChange,
   onLoadWorkspace,
   onSaveWorkspace,
   onNewWorkspace,
@@ -74,6 +84,7 @@ export default function QueryEditor({
   onRestoreWorkspaceRevision,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   useEffect(() => {
     const el = ref.current;
@@ -99,6 +110,16 @@ export default function QueryEditor({
     return () => el.removeEventListener("keydown", handleKey);
   }, [value, onChange, onRun, readOnly]);
 
+  const commandActions = useMemo<CommandPaletteAction[]>(() => [
+    { id: "run", category: "Query", label: "Run current query", detail: "Execute the SQL in the editor.", keywords: "execute ctrl enter", disabled: running, run: onRun },
+    { id: "focus", category: "Query", label: "Focus SQL editor", detail: "Place the cursor in the query editor.", keywords: "write query", run: () => ref.current?.focus() },
+    { id: "shortcuts", category: "Help", label: "View keyboard shortcuts", detail: "Open the compact editor shortcut reference.", keywords: "help reference", run: () => setShortcutsOpen(true) },
+    { id: "save", category: "Workspace", label: "Save workspace", detail: "Store the current named query in this browser.", keywords: "draft", disabled: readOnly || isDuplicateWorkspaceName || !workspaceName.trim(), run: onSaveWorkspace },
+    { id: "new", category: "Workspace", label: "Start a new workspace", detail: "Prepare a fresh named draft from the current query.", keywords: "draft", disabled: readOnly, run: onNewWorkspace },
+    { id: "share", category: "Share", label: "Copy read-only query link", detail: "Copy a shareable link for the current SQL.", keywords: "link clipboard", run: onShareQuery },
+    ...(readOnly ? [{ id: "editable", category: "Workspace", label: "Make editable copy", detail: "Leave read-only mode and continue from this query.", keywords: "shared clone", run: onMakeEditableCopy }] : []),
+  ], [isDuplicateWorkspaceName, onMakeEditableCopy, onNewWorkspace, onRun, onSaveWorkspace, onShareQuery, readOnly, running, workspaceName]);
+
   return (
     <div className="relative flex flex-col h-full">
       <textarea
@@ -119,6 +140,10 @@ export default function QueryEditor({
         workspaceLabel={workspaceLabel}
         onWorkspaceLabelChange={onWorkspaceLabelChange}
         workspaceLabels={workspaceLabels}
+        workspaceSearch={workspaceSearch}
+        onWorkspaceSearchChange={onWorkspaceSearchChange}
+        activeLabelFilters={activeLabelFilters}
+        onActiveLabelFiltersChange={onActiveLabelFiltersChange}
         onLoadWorkspace={onLoadWorkspace}
         onSaveWorkspace={onSaveWorkspace}
         onNewWorkspace={onNewWorkspace}
@@ -139,7 +164,8 @@ export default function QueryEditor({
       <div className="flex items-center justify-between px-4 py-2 border-t border-border/60 bg-card/60">
         <div className="flex items-center gap-2 text-[11px] text-muted-foreground font-mono">
           <span className="hidden sm:inline">Ctrl/Cmd + Enter to run · TAB indents</span>
-          <Dialog>
+          <CommandPalette actions={commandActions} />
+          <Dialog open={shortcutsOpen} onOpenChange={setShortcutsOpen}>
             <DialogTrigger asChild>
               <button type="button" className="inline-flex items-center gap-1 px-1 py-0.5 hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary/60 rounded-sm" title="Open keyboard shortcut reference">
                 <Keyboard className="h-3.5 w-3.5" aria-hidden="true" /> Shortcuts

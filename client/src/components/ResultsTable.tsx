@@ -16,16 +16,23 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BookmarkPlus, ClipboardCopy, Download, FileJson, ListFilter, Search, Trash2, Upload, X } from "lucide-react";
+import { BookmarkPlus, ClipboardCopy, Download, FileJson, History, ListFilter, RotateCcw, Search, Trash2, Upload, X } from "lucide-react";
 import { copyResultPageAsJson, downloadCsv, downloadJson, downloadText } from "@/lib/csv";
-import { DEFAULT_FILTER_PRESET_FOLDER, DEFAULT_PAGE_SIZE, deleteFilterPreset, listFilterPresetFolders, loadFilterPresets, loadPageSize, mergeImportedFilterPresets, PAGE_SIZES, parseFilterPresetArchive, saveFilterPresets, savePageSize, serializeFilterPresetArchive, upsertFilterPreset, type PageSize, type ResultFilterPreset } from "@/lib/preferences";
+import { DEFAULT_FILTER_PRESET_FOLDER, DEFAULT_PAGE_SIZE, deleteFilterPreset, listFilterPresetFolders, loadFilterPresetImportActivities, loadFilterPresets, loadPageSize, PAGE_SIZES, parseFilterPresetArchive, previewFilterPresetImport, saveFilterPresetImportActivities, saveFilterPresets, savePageSize, serializeFilterPresetArchive, undoImportedFilterPresets, upsertFilterPreset, type FilterPresetImportActivity, type FilterPresetImportPreview, type PageSize, type ResultFilterPreset } from "@/lib/preferences";
 import { activeColumnFilterCount, filterResultRows, formatResultValue, type ColumnFilters } from "@/lib/tableFilter";
 import { toast } from "sonner";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 interface Props {
   columns: string[];
   rows: unknown[][];
   onRowRendered?: () => void;
+}
+
+interface PendingFilterPresetImport {
+  fileName: string;
+  incoming: ResultFilterPreset[];
+  preview: FilterPresetImportPreview;
 }
 
 export default function ResultsTable({ columns, rows }: Props) {
@@ -40,6 +47,9 @@ export default function ResultsTable({ columns, rows }: Props) {
   const [presetName, setPresetName] = useState("");
   const [presetFolder, setPresetFolder] = useState(DEFAULT_FILTER_PRESET_FOLDER);
   const [activePresetId, setActivePresetId] = useState("");
+  const [pendingFilterPresetImport, setPendingFilterPresetImport] = useState<PendingFilterPresetImport | null>(null);
+  const [filterPresetImportHistory, setFilterPresetImportHistory] = useState<FilterPresetImportActivity[]>(() => loadFilterPresetImportActivities());
+  const [showFilterPresetImportHistory, setShowFilterPresetImportHistory] = useState(false);
   const filterRef = useRef<HTMLInputElement>(null);
   const presetImportRef = useRef<HTMLInputElement>(null);
 
@@ -50,6 +60,10 @@ export default function ResultsTable({ columns, rows }: Props) {
   useEffect(() => {
     saveFilterPresets(filterPresets);
   }, [filterPresets]);
+
+  useEffect(() => {
+    saveFilterPresetImportActivities(filterPresetImportHistory);
+  }, [filterPresetImportHistory]);
 
   useEffect(() => {
     setPage(1);
@@ -174,31 +188,60 @@ export default function ResultsTable({ columns, rows }: Props) {
     toast.success(`${filterPresets.length} filter preset${filterPresets.length === 1 ? "" : "s"} exported`);
   };
 
-  const importFilterPresets = async (file: File) => {
+  const previewFilterPresetArchive = async (file: File) => {
     try {
       const incoming = parseFilterPresetArchive(await file.text());
       if (!incoming) {
         toast.error("Choose a valid Queryline filter preset JSON file.");
         return;
       }
-      const merged = mergeImportedFilterPresets(filterPresets, incoming);
-      if (merged.imported === 0) {
-        toast("No presets were imported; matching folder and name pairs already exist or local storage is full.");
-        return;
-      }
-      setFilterPresets(merged.presets);
-      setActivePresetId("");
-      toast.success(`${merged.imported} preset${merged.imported === 1 ? "" : "s"} imported${merged.skipped ? ` · ${merged.skipped} matching preset${merged.skipped === 1 ? "" : "s"} skipped` : ""}`);
+      setPendingFilterPresetImport({ fileName: file.name, incoming, preview: previewFilterPresetImport(filterPresets, incoming) });
     } catch {
       toast.error("This filter preset file could not be read.");
     }
   };
 
+  const confirmFilterPresetImport = () => {
+    if (!pendingFilterPresetImport) return;
+    const merged = previewFilterPresetImport(filterPresets, pendingFilterPresetImport.incoming);
+    if (merged.imported === 0) {
+      setPendingFilterPresetImport(null);
+      toast("No presets were imported; matching folder and name pairs already exist or local storage is full.");
+      return;
+    }
+    setFilterPresets(merged.presets);
+    setFilterPresetImportHistory((entries) => [{
+      id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `import-${Date.now()}`,
+      fileName: pendingFilterPresetImport.fileName,
+      importedPresets: merged.importablePresets,
+      imported: merged.imported,
+      skipped: merged.skipped,
+      createdAt: Date.now(),
+      undone: false,
+    }, ...entries].slice(0, 6));
+    setActivePresetId("");
+    setPendingFilterPresetImport(null);
+    toast.success(`${merged.imported} preset${merged.imported === 1 ? "" : "s"} imported${merged.skipped ? ` · ${merged.skipped} matching preset${merged.skipped === 1 ? "" : "s"} skipped` : ""}`);
+  };
+
+  const undoFilterPresetImport = (activity: FilterPresetImportActivity) => {
+    if (activity.undone) return;
+    const undo = undoImportedFilterPresets(filterPresets, activity.importedPresets);
+    if (undo.removed === 0) {
+      toast("Those imported presets were changed or removed, so Queryline left them intact.");
+      return;
+    }
+    setFilterPresets(undo.presets);
+    setActivePresetId((current) => activity.importedPresets.some((preset) => preset.id === current) ? "" : current);
+    setFilterPresetImportHistory((entries) => entries.map((entry) => entry.id === activity.id ? { ...entry, undone: true } : entry));
+    toast.success(`Undid ${undo.removed} imported preset${undo.removed === 1 ? "" : "s"}${undo.protected ? ` · ${undo.protected} changed preset${undo.protected === 1 ? "" : "s"} kept` : ""}`);
+  };
+
   return (
     <div className="flex flex-col h-full">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 py-2.5 border-b border-border/70 bg-primary/[0.012]">
-        <div className="text-xs text-muted-foreground font-mono whitespace-nowrap border-l-2 border-primary pl-2.5">
-          <span className="font-mono text-[18px] font-bold tracking-tight tabular-nums text-primary">{rowCount.toLocaleString("en-US")}</span> row{rowCount === 1 ? "" : "s"}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3.5 border-b border-primary/20 bg-primary/[0.025]">
+        <div className="text-xs text-muted-foreground font-mono whitespace-nowrap border-l-[4px] border-primary pl-2.5">
+          <span className="font-mono text-[22px] font-bold tracking-tight tabular-nums text-primary">{rowCount.toLocaleString("en-US")}</span> row{rowCount === 1 ? "" : "s"}
           {rowCount > pageSize ? ` · page ${safePage.toLocaleString("en-US")} of ${totalPages.toLocaleString("en-US")}` : ""}
         </div>
         <div className="relative flex min-w-[11rem] flex-1 items-center">
@@ -307,18 +350,27 @@ export default function ResultsTable({ columns, rows }: Props) {
           >
             <Download className="h-3 w-3" aria-hidden="true" /><span className="hidden xl:inline text-[10px] font-mono">Export</span>
           </button>
-          <input ref={presetImportRef} type="file" accept="application/json,.json" className="sr-only" aria-label="Import Queryline filter preset JSON file" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importFilterPresets(file); event.target.value = ""; }} />
+          <input ref={presetImportRef} type="file" accept="application/json,.json" className="sr-only" aria-label="Preview Queryline filter preset JSON file" onChange={(event) => { const file = event.target.files?.[0]; if (file) void previewFilterPresetArchive(file); event.target.value = ""; }} />
           <button
             type="button"
             onClick={() => presetImportRef.current?.click()}
             className="inline-flex items-center gap-1 px-1.5 py-1 text-muted-foreground hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary/60 transition-colors duration-150 active:scale-[0.97]"
-            title="Merge filter presets from a Queryline JSON file"
-            aria-label="Import filter presets"
+            title="Preview filter presets from a Queryline JSON file before merging"
+            aria-label="Preview filter preset import"
           >
             <Upload className="h-3 w-3" aria-hidden="true" /><span className="hidden xl:inline text-[10px] font-mono">Import</span>
           </button>
+          <button
+            type="button"
+            onClick={() => setShowFilterPresetImportHistory(true)}
+            className="inline-flex items-center gap-1 px-1.5 py-1 text-muted-foreground hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary/60 transition-colors duration-150 active:scale-[0.97]"
+            title="Review filter preset import activity and undo an untouched merge"
+            aria-label="Review filter preset import activity"
+          >
+            <History className="h-3 w-3" aria-hidden="true" /><span className="hidden xl:inline text-[10px] font-mono">Imports{filterPresetImportHistory.length ? ` ${filterPresetImportHistory.length}` : ""}</span>
+          </button>
         </div>
-        <div className="flex items-center border-l border-border/70 shrink-0 divide-x divide-border/70 opacity-60 hover:opacity-100 transition-opacity duration-150">
+        <div className="flex items-center border-l border-border/55 shrink-0 divide-x divide-border/55 opacity-45 hover:opacity-100 focus-within:opacity-100 transition-opacity duration-150">
           <button
             type="button"
             onClick={() => {
@@ -379,7 +431,7 @@ export default function ResultsTable({ columns, rows }: Props) {
 
       <div className="overflow-auto flex-1 bg-[linear-gradient(to_bottom,hsl(var(--primary)/0.018),transparent_5rem)]">
         <table className="w-full text-[13px] leading-5 border-collapse">
-          <thead className="sticky top-0 bg-secondary z-10">
+          <thead className="sticky top-0 bg-secondary z-10 shadow-[0_1px_0_hsl(var(--primary)/0.22)]">
             <tr>
               <th className="text-left text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground px-3 py-2.5 border-b border-border/70 w-10">#</th>
               {columns.map((col, i) => (
@@ -387,7 +439,7 @@ export default function ResultsTable({ columns, rows }: Props) {
                   key={`${col}-${i}`}
                   scope="col"
                   aria-sort={sortCol === i ? (sortAsc ? "ascending" : "descending") : "none"}
-                  className="text-left text-[10px] font-mono font-bold uppercase tracking-widest text-foreground/85 px-3 py-2.5 border-b border-border/70 whitespace-nowrap"
+                  className="text-left text-[10px] font-mono font-bold uppercase tracking-widest text-foreground px-3 py-2.5 border-b border-border/70 whitespace-nowrap"
                 >
                   <button
                     type="button"
@@ -493,6 +545,43 @@ export default function ResultsTable({ columns, rows }: Props) {
           </div>
         </div>
       )}
+      <Dialog open={Boolean(pendingFilterPresetImport)} onOpenChange={(open) => { if (!open) setPendingFilterPresetImport(null); }}>
+        <DialogContent className="max-w-md gap-3 p-4 font-mono" aria-describedby="preset-import-description">
+          <DialogHeader className="gap-1 text-left">
+            <DialogTitle className="text-sm">Review filter preset import</DialogTitle>
+            <DialogDescription id="preset-import-description" className="text-[11px] leading-relaxed">{pendingFilterPresetImport?.fileName ?? "Selected file"} is validated locally before any preset is saved.</DialogDescription>
+          </DialogHeader>
+          {pendingFilterPresetImport && <>
+            <div className="grid grid-cols-2 divide-x divide-border border-y border-border/70 text-center text-[11px]">
+              <div className="px-2 py-2"><strong className="block text-base text-primary">{pendingFilterPresetImport.preview.imported}</strong>to merge</div>
+              <div className="px-2 py-2"><strong className="block text-base text-muted-foreground">{pendingFilterPresetImport.preview.skipped}</strong>to skip</div>
+            </div>
+            <div className="max-h-40 overflow-y-auto border-y border-border/70 py-1 text-[11px]">
+              {pendingFilterPresetImport.preview.importablePresets.map((preset) => <p key={preset.id} className="px-2 py-1.5 text-foreground"><span className="text-primary">{preset.folder ?? DEFAULT_FILTER_PRESET_FOLDER}</span> / {preset.name}</p>)}
+              {pendingFilterPresetImport.preview.skippedPresets.map((preset, index) => <p key={`${preset.id}-${index}`} className="px-2 py-1.5 text-muted-foreground line-through">{preset.folder ?? DEFAULT_FILTER_PRESET_FOLDER} / {preset.name}</p>)}
+            </div>
+            <p className="text-[10px] leading-relaxed text-muted-foreground">Matching folder-and-name pairs, or presets beyond local storage capacity, remain untouched and are shown struck through.</p>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setPendingFilterPresetImport(null)} className="px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground focus:outline-none focus:ring-1 focus:ring-primary/60">Cancel</button>
+              <button type="button" onClick={confirmFilterPresetImport} disabled={pendingFilterPresetImport.preview.imported === 0} className="bg-primary px-2.5 py-1.5 text-[11px] font-semibold text-primary-foreground disabled:opacity-40 focus:outline-none focus:ring-1 focus:ring-primary/60">Merge {pendingFilterPresetImport.preview.imported} preset{pendingFilterPresetImport.preview.imported === 1 ? "" : "s"}</button>
+            </div>
+          </>}
+        </DialogContent>
+      </Dialog>
+      <Dialog open={showFilterPresetImportHistory} onOpenChange={setShowFilterPresetImportHistory}>
+        <DialogContent className="max-w-md gap-3 p-4 font-mono" aria-describedby="preset-import-history-description">
+          <DialogHeader className="gap-1 text-left">
+            <DialogTitle className="flex items-center gap-2 text-sm"><History className="h-3.5 w-3.5 text-primary" aria-hidden="true" />Preset import activity</DialogTitle>
+            <DialogDescription id="preset-import-history-description" className="text-[11px] leading-relaxed">Undo removes only the untouched presets created by the selected import. Any changed preset stays protected.</DialogDescription>
+          </DialogHeader>
+          {filterPresetImportHistory.length === 0 ? <p className="border-y border-border/70 py-5 text-center text-[11px] text-muted-foreground">No filter preset imports in this session.</p> : <div className="max-h-56 divide-y divide-border/60 overflow-y-auto border-y border-border/70">
+            {filterPresetImportHistory.map((activity) => <div key={activity.id} className="flex items-center justify-between gap-3 px-1 py-2.5 text-[11px]">
+              <span className="min-w-0"><span className="block truncate text-foreground">{activity.fileName}</span><span className="block pt-0.5 text-[10px] text-muted-foreground">{activity.imported} merged · {activity.skipped} skipped · {new Date(activity.createdAt).toLocaleTimeString()}</span></span>
+              <button type="button" disabled={activity.undone} onClick={() => undoFilterPresetImport(activity)} className="inline-flex shrink-0 items-center gap-1 border border-border px-2 py-1 text-[10px] text-muted-foreground hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary/60 disabled:cursor-not-allowed disabled:opacity-45"><RotateCcw className="h-3 w-3" aria-hidden="true" />{activity.undone ? "Undone" : "Undo"}</button>
+            </div>)}
+          </div>}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

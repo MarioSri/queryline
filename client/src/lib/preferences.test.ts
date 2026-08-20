@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_FILTER_PRESET_FOLDER, DEFAULT_PAGE_SIZE, deleteHistoryEntry, deleteWorkspace, deleteWorkspaceRevisions, findDuplicateWorkspace, getWorkspaceRevisions, listWorkspaceLabels, mergeImportedFilterPresets, mergeImportedWorkspaces, parseFilterPresetArchive, parseFilterPresets, parseHistory, parsePageSize, parseWorkspaceArchive, parseWorkspaceRevisions, parseWorkspaces, recordWorkspaceRevision, serializeFilterPresetArchive, serializeWorkspaceArchive, toggleHistoryPin, upsertFilterPreset, upsertWorkspace } from "./preferences";
+import { DEFAULT_FILTER_PRESET_FOLDER, DEFAULT_PAGE_SIZE, deleteHistoryEntry, deleteWorkspace, deleteWorkspaceRevisions, filterWorkspacesBySearch, findDuplicateWorkspace, getWorkspaceRevisions, listWorkspaceLabels, mergeImportedFilterPresets, mergeImportedWorkspaces, parseCommandPaletteRecents, parseFilterPresetArchive, parseFilterPresetImportActivities, parseFilterPresets, parseHistory, parsePageSize, parseWorkspaceArchive, parseWorkspaceRevisions, parseWorkspaces, previewFilterPresetImport, recordCommandPaletteRecent, recordWorkspaceRevision, serializeFilterPresetArchive, serializeWorkspaceArchive, toggleHistoryPin, undoImportedFilterPresets, upsertFilterPreset, upsertWorkspace } from "./preferences";
 
 describe("Queryline preferences", () => {
   it("accepts only supported page sizes", () => {
@@ -95,6 +95,8 @@ describe("Queryline preferences", () => {
     const revenue = workspaces.find((workspace) => workspace.id === "revenue");
     expect(revenue).toBeDefined();
     expect(recordWorkspaceRevision({}, revenue!, 3).revenue[0].label).toBe("Finance");
+    expect(filterWorkspacesBySearch(workspaces, "operations").map((workspace) => workspace.id)).toEqual(["orders"]);
+    expect(filterWorkspacesBySearch(workspaces, "rev").map((workspace) => workspace.id)).toEqual(["revenue"]);
   });
 
   it("exports validated filter presets and merges imports without overwriting matching folder and name pairs", () => {
@@ -110,5 +112,47 @@ describe("Queryline preferences", () => {
     expect(merged.presets.map((preset) => preset.name)).toEqual(["Open", "Paid"]);
     expect(merged.presets[0].id).toBe("finance-imported");
     expect(parseFilterPresetArchive('{"format":"wrong"}')).toBeNull();
+  });
+
+  it("previews filter preset imports before a merge while preserving collision safeguards", () => {
+    const existing = parseFilterPresets(JSON.stringify([{ id: "paid", name: "Paid", folder: "Finance", filter: "paid", columnFilters: {}, createdAt: 1, updatedAt: 2 }]));
+    const incoming = parseFilterPresets(JSON.stringify([
+      { id: "paid", name: "Open", folder: "Finance", filter: "open", columnFilters: {}, createdAt: 2, updatedAt: 3 },
+      { id: "duplicate", name: "paid", folder: "finance", filter: "late", columnFilters: {}, createdAt: 2, updatedAt: 4 },
+    ]));
+    const preview = previewFilterPresetImport(existing, incoming);
+    expect(preview.imported).toBe(1);
+    expect(preview.skipped).toBe(1);
+    expect(preview.importablePresets.map((preset) => preset.id)).toEqual(["paid-imported"]);
+    expect(preview.skippedPresets.map((preset) => preset.name)).toEqual(["paid"]);
+  });
+
+  it("undoes only unchanged presets created by one confirmed import", () => {
+    const existing = parseFilterPresets(JSON.stringify([{ id: "paid", name: "Paid", folder: "Finance", filter: "paid", columnFilters: {}, createdAt: 1, updatedAt: 2 }]));
+    const incoming = parseFilterPresets(JSON.stringify([{ id: "open", name: "Open", folder: "Finance", filter: "open", columnFilters: {}, createdAt: 3, updatedAt: 4 }]));
+    const preview = previewFilterPresetImport(existing, incoming);
+    const undone = undoImportedFilterPresets(preview.presets, preview.importablePresets);
+    expect(undone.removed).toBe(1);
+    expect(undone.protected).toBe(0);
+    expect(undone.presets.map((preset) => preset.id)).toEqual(["paid"]);
+    const changed = preview.presets.map((preset) => preset.id === "open" ? { ...preset, filter: "updated", updatedAt: 5 } : preset);
+    const protectedUndo = undoImportedFilterPresets(changed, preview.importablePresets);
+    expect(protectedUndo.removed).toBe(0);
+    expect(protectedUndo.protected).toBe(1);
+  });
+
+  it("rehydrates validated import activity snapshots for safe undo after a reload", () => {
+    const activities = parseFilterPresetImportActivities(JSON.stringify([{ id: "import-1", fileName: " presets.json ", importedPresets: [{ id: "paid", name: "Paid", folder: "Finance", filter: "paid", columnFilters: {}, createdAt: 1, updatedAt: 2 }], imported: 1, skipped: 0, createdAt: 10, undone: false }]));
+    expect(activities).toHaveLength(1);
+    expect(activities[0].fileName).toBe("presets.json");
+    expect(activities[0].importedPresets[0].name).toBe("Paid");
+  });
+
+  it("keeps compact, deduplicated command recents in most-recent-first order", () => {
+    const first = recordCommandPaletteRecent([], "run", 1);
+    const next = recordCommandPaletteRecent(first, "save", 2);
+    const repeated = recordCommandPaletteRecent(next, "run", 3);
+    expect(repeated.map((entry) => entry.actionId)).toEqual(["run", "save"]);
+    expect(parseCommandPaletteRecents(JSON.stringify([...repeated, { actionId: "run", usedAt: 1 }, { actionId: "", usedAt: 4 }]))).toEqual(repeated);
   });
 });

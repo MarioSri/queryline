@@ -46,9 +46,13 @@ const PAGE_SIZE_KEY = "queryline.page-size.v1";
 const WORKSPACES_KEY = "queryline.workspaces.v1";
 const FILTER_PRESETS_KEY = "queryline.filter-presets.v1";
 const WORKSPACE_REVISIONS_KEY = "queryline.workspace-revisions.v1";
+const FILTER_PRESET_IMPORT_ACTIVITY_KEY = "queryline.filter-preset-import-activity.v1";
+const COMMAND_PALETTE_RECENTS_KEY = "queryline.command-palette-recents.v1";
 const MAX_HISTORY = 50;
 const MAX_WORKSPACES = 25;
 const MAX_FILTER_PRESETS = 20;
+const MAX_FILTER_PRESET_IMPORT_ACTIVITIES = 6;
+const MAX_COMMAND_PALETTE_RECENTS = 6;
 export const MAX_WORKSPACE_REVISIONS = 12;
 export const DEFAULT_FILTER_PRESET_FOLDER = "General";
 
@@ -193,6 +197,12 @@ export function listWorkspaceLabels(entries: QueryWorkspace[]): string[] {
   return Array.from(new Set(entries.map((workspace) => normalizeWorkspaceLabel(workspace.label)).filter(Boolean))).sort((a, b) => a.localeCompare(b));
 }
 
+export function filterWorkspacesBySearch(entries: QueryWorkspace[], query: string): QueryWorkspace[] {
+  const key = workspaceNameKey(query);
+  if (!key) return entries;
+  return entries.filter((workspace) => workspaceNameKey(workspace.name).includes(key) || workspaceNameKey(normalizeWorkspaceLabel(workspace.label)).includes(key));
+}
+
 function isWorkspaceRevision(value: unknown): value is WorkspaceRevision {
   if (!value || typeof value !== "object") return false;
   const revision = value as Record<string, unknown>;
@@ -329,6 +339,32 @@ export interface FilterPresetImportResult {
   skipped: number;
 }
 
+export interface FilterPresetImportPreview extends FilterPresetImportResult {
+  importablePresets: ResultFilterPreset[];
+  skippedPresets: ResultFilterPreset[];
+}
+
+export interface FilterPresetImportUndoResult {
+  presets: ResultFilterPreset[];
+  removed: number;
+  protected: number;
+}
+
+export interface FilterPresetImportActivity {
+  id: string;
+  fileName: string;
+  importedPresets: ResultFilterPreset[];
+  imported: number;
+  skipped: number;
+  createdAt: number;
+  undone: boolean;
+}
+
+export interface CommandPaletteRecentAction {
+  actionId: string;
+  usedAt: number;
+}
+
 function normalizeColumnFilters(value: unknown): ColumnFilters {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return Object.fromEntries(Object.entries(value as Record<string, unknown>)
@@ -428,21 +464,140 @@ export function parseFilterPresetArchive(value: string | null): ResultFilterPres
   }
 }
 
-export function mergeImportedFilterPresets(existing: ResultFilterPreset[], incoming: ResultFilterPreset[]): FilterPresetImportResult {
+export function previewFilterPresetImport(existing: ResultFilterPreset[], incoming: ResultFilterPreset[]): FilterPresetImportPreview {
   const next = uniqueFilterPresetNames(existing.filter(isFilterPreset).map(normalizeFilterPreset));
   const keys = new Set(next.map(filterPresetKey));
   const ids = new Set(next.map((preset) => preset.id));
+  const importablePresets: ResultFilterPreset[] = [];
+  const skippedPresets: ResultFilterPreset[] = [];
   let imported = 0;
   let skipped = 0;
   for (const candidate of incoming.filter(isFilterPreset).map(normalizeFilterPreset)) {
-    if (next.length >= MAX_FILTER_PRESETS || keys.has(filterPresetKey(candidate))) { skipped += 1; continue; }
+    if (next.length >= MAX_FILTER_PRESETS || keys.has(filterPresetKey(candidate))) {
+      skippedPresets.push(candidate);
+      skipped += 1;
+      continue;
+    }
     const id = ids.has(candidate.id) ? createImportedPresetId(ids, candidate.id) : candidate.id;
-    next.push({ ...candidate, id });
+    const importedPreset = { ...candidate, id };
+    next.push(importedPreset);
+    importablePresets.push(importedPreset);
     keys.add(filterPresetKey(candidate));
     ids.add(id);
     imported += 1;
   }
-  return { presets: sortFilterPresets(next).slice(0, MAX_FILTER_PRESETS), imported, skipped };
+  return { presets: sortFilterPresets(next).slice(0, MAX_FILTER_PRESETS), imported, skipped, importablePresets, skippedPresets };
+}
+
+export function mergeImportedFilterPresets(existing: ResultFilterPreset[], incoming: ResultFilterPreset[]): FilterPresetImportResult {
+  const preview = previewFilterPresetImport(existing, incoming);
+  return { presets: preview.presets, imported: preview.imported, skipped: preview.skipped };
+}
+
+function isUnchangedImportedPreset(current: ResultFilterPreset, imported: ResultFilterPreset): boolean {
+  return current.id === imported.id &&
+    current.name === imported.name &&
+    normalizePresetFolder(current.folder) === normalizePresetFolder(imported.folder) &&
+    current.filter === imported.filter &&
+    current.createdAt === imported.createdAt &&
+    current.updatedAt === imported.updatedAt &&
+    JSON.stringify(normalizeColumnFilters(current.columnFilters)) === JSON.stringify(normalizeColumnFilters(imported.columnFilters));
+}
+
+/** Removes only the untouched presets created by one confirmed import. */
+export function undoImportedFilterPresets(entries: ResultFilterPreset[], importedPresets: ResultFilterPreset[]): FilterPresetImportUndoResult {
+  const snapshots = new Map(importedPresets.filter(isFilterPreset).map((preset) => [preset.id, normalizeFilterPreset(preset)]));
+  let removed = 0;
+  let protectedCount = 0;
+  const presets = entries.filter((preset) => {
+    const snapshot = snapshots.get(preset.id);
+    if (!snapshot) return true;
+    if (isUnchangedImportedPreset(preset, snapshot)) {
+      removed += 1;
+      return false;
+    }
+    protectedCount += 1;
+    return true;
+  });
+  return { presets, removed, protected: protectedCount };
+}
+
+function isFilterPresetImportActivity(value: unknown): value is FilterPresetImportActivity {
+  if (!value || typeof value !== "object") return false;
+  const activity = value as Record<string, unknown>;
+  return typeof activity.id === "string" && activity.id.length > 0 &&
+    typeof activity.fileName === "string" && activity.fileName.length <= 180 &&
+    Array.isArray(activity.importedPresets) &&
+    typeof activity.imported === "number" && Number.isSafeInteger(activity.imported) && activity.imported >= 0 &&
+    typeof activity.skipped === "number" && Number.isSafeInteger(activity.skipped) && activity.skipped >= 0 &&
+    typeof activity.createdAt === "number" && Number.isFinite(activity.createdAt) &&
+    typeof activity.undone === "boolean";
+}
+
+function normalizeFilterPresetImportActivity(activity: FilterPresetImportActivity): FilterPresetImportActivity {
+  const importedPresets = parseFilterPresets(JSON.stringify(activity.importedPresets));
+  return {
+    ...activity,
+    fileName: activity.fileName.trim().slice(0, 180) || "Imported preset archive",
+    importedPresets,
+    imported: Math.min(activity.imported, importedPresets.length),
+  };
+}
+
+export function parseFilterPresetImportActivities(value: string | null): FilterPresetImportActivity[] {
+  if (!value) return [];
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+    const seen = new Set<string>();
+    return parsed.filter(isFilterPresetImportActivity).map(normalizeFilterPresetImportActivity)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .filter((activity) => activity.importedPresets.length > 0 && !seen.has(activity.id) && Boolean(seen.add(activity.id)))
+      .slice(0, MAX_FILTER_PRESET_IMPORT_ACTIVITIES);
+  } catch {
+    return [];
+  }
+}
+
+export function loadFilterPresetImportActivities(): FilterPresetImportActivity[] {
+  try { return parseFilterPresetImportActivities(storage()?.getItem(FILTER_PRESET_IMPORT_ACTIVITY_KEY) ?? null); } catch { return []; }
+}
+
+export function saveFilterPresetImportActivities(entries: FilterPresetImportActivity[]): void {
+  try { storage()?.setItem(FILTER_PRESET_IMPORT_ACTIVITY_KEY, JSON.stringify(parseFilterPresetImportActivities(JSON.stringify(entries)))); } catch { /* local convenience only */ }
+}
+
+function isCommandPaletteRecentAction(value: unknown): value is CommandPaletteRecentAction {
+  if (!value || typeof value !== "object") return false;
+  const entry = value as Record<string, unknown>;
+  return typeof entry.actionId === "string" && entry.actionId.length > 0 && entry.actionId.length <= 80 && typeof entry.usedAt === "number" && Number.isFinite(entry.usedAt);
+}
+
+export function parseCommandPaletteRecents(value: string | null): CommandPaletteRecentAction[] {
+  if (!value) return [];
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+    const seen = new Set<string>();
+    return parsed.filter(isCommandPaletteRecentAction).sort((a, b) => b.usedAt - a.usedAt)
+      .filter((entry) => !seen.has(entry.actionId) && Boolean(seen.add(entry.actionId)))
+      .slice(0, MAX_COMMAND_PALETTE_RECENTS);
+  } catch {
+    return [];
+  }
+}
+
+export function loadCommandPaletteRecents(): CommandPaletteRecentAction[] {
+  try { return parseCommandPaletteRecents(storage()?.getItem(COMMAND_PALETTE_RECENTS_KEY) ?? null); } catch { return []; }
+}
+
+export function saveCommandPaletteRecents(entries: CommandPaletteRecentAction[]): void {
+  try { storage()?.setItem(COMMAND_PALETTE_RECENTS_KEY, JSON.stringify(parseCommandPaletteRecents(JSON.stringify(entries)))); } catch { /* local convenience only */ }
+}
+
+export function recordCommandPaletteRecent(entries: CommandPaletteRecentAction[], actionId: string, usedAt = Date.now()): CommandPaletteRecentAction[] {
+  if (!actionId.trim() || actionId.length > 80) return parseCommandPaletteRecents(JSON.stringify(entries));
+  return parseCommandPaletteRecents(JSON.stringify([{ actionId, usedAt }, ...entries.filter((entry) => entry.actionId !== actionId)]));
 }
 
 export function listFilterPresetFolders(entries: ResultFilterPreset[]): string[] {

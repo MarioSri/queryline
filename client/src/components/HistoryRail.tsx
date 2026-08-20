@@ -37,21 +37,21 @@ export default function HistoryRail({ entries, onRestore, onTogglePin, onDelete,
   const recent = entries.filter((entry) => !entry.pinned);
 
   const renderEntry = (entry: HistoryEntry) => (
-    <div key={entry.id} className={`group border-b border-border/40 border-l-2 last:border-b-0 ${entry.pinned ? "border-l-primary bg-primary/[0.025]" : "border-l-transparent"}`}>
-      <div className="flex items-start gap-1 px-2 py-2.5">
+    <div key={entry.id} className={`group border-b border-border/25 border-l-2 last:border-b-0 ${entry.pinned ? "border-l-primary bg-primary/[0.025]" : "border-l-transparent"}`}>
+      <div className="flex items-start gap-1 px-2 py-2">
         <button
           type="button"
           onClick={() => onRestore(entry.sql)}
           className="min-w-0 flex-1 text-left px-2 hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary/50 rounded transition-colors duration-150"
           title="Restore this query into the editor"
         >
-          <div className="font-mono text-[12px] leading-snug text-foreground/90">{truncate(entry.sql, 60)}</div>
-          <div className="flex items-center gap-2 mt-1.5 text-[11px] text-muted-foreground font-mono">
-            <span className={entry.pinned ? "text-primary" : "text-muted-foreground"}>{entry.elapsedMs} ms</span>
-            <span className="text-border">|</span>
-            <span>{entry.rowCount.toLocaleString("en-US")} rows</span>
-            <span className="ml-auto">{entry.ts}</span>
+          <div className="flex items-center gap-1.5 text-[10px] font-mono tabular-nums">
+            <span className={entry.pinned ? "font-semibold text-primary" : "font-medium text-foreground/75"}>{entry.elapsedMs} ms</span>
+            <span className="text-border">·</span>
+            <span className="text-foreground/70">{entry.rowCount.toLocaleString("en-US")} rows</span>
+            <span className="ml-auto text-muted-foreground/70">{entry.ts}</span>
           </div>
+          <div className="mt-1.5 font-mono text-[10px] leading-snug text-muted-foreground/70">{truncate(entry.sql, 54)}</div>
         </button>
         <div className="flex shrink-0 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
           <button
@@ -79,10 +79,10 @@ export default function HistoryRail({ entries, onRestore, onTogglePin, onDelete,
   );
 
   return (
-    <aside className={`w-72 shrink-0 border-l border-border/70 flex flex-col overflow-hidden bg-sidebar/55 ${className}`}>
-      <div className="flex items-baseline justify-between px-4 py-3 border-b border-border/60">
-        <h2 className="flex items-center gap-2 font-serif italic text-[14px] font-medium tracking-tight text-foreground/85"><span className="h-1.5 w-1.5 bg-muted-foreground/65 not-italic" aria-hidden="true" />Execution ledger</h2>
-        <span className="font-mono text-[10px] text-muted-foreground">{entries.length} runs</span>
+    <aside className={`w-64 shrink-0 border-l border-border/45 flex flex-col overflow-hidden bg-sidebar/25 ${className}`}>
+      <div className="flex items-baseline justify-between px-4 py-2.5 border-b border-border/35">
+        <h2 className="flex items-center gap-2 font-serif italic text-[14px] font-medium tracking-tight text-foreground/70"><span className="h-1.5 w-1.5 bg-muted-foreground/40 not-italic" aria-hidden="true" />Execution ledger</h2>
+        <span className="font-mono text-[9px] text-muted-foreground/65">{entries.length} runs</span>
       </div>
       <div className="overflow-y-auto flex-1 py-2">
         {entries.length === 0 && (

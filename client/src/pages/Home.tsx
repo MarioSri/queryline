@@ -3,7 +3,8 @@
  * Main console page. Layout: header strip → [ schema | editor over results | history ].
  * Editor and results share the center column with a resizable divider.
  * Design alignment: Ledger Light organizes browser-local drafts with quiet
- * filing cues while keeping live SQL execution visually central.
+ * filing cues while keeping live SQL execution visually central. Search state
+ * remains temporary so browser-local filing data never changes accidentally.
  */
 
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -43,11 +44,13 @@ export default function Home() {
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   const [workspaceName, setWorkspaceName] = useState("Untitled query");
   const [workspaceLabel, setWorkspaceLabel] = useState("");
+  const [workspaceSearch, setWorkspaceSearch] = useState("");
+  const [activeLabelFilters, setActiveLabelFilters] = useState<string[]>([]);
   const [shareLinkMode, setShareLinkMode] = useState<ShareLinkMode>("standard");
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [dividerY, setDividerY] = useState(36); // editor share %; results deliberately lead the console
   const [compactPanel, setCompactPanel] = useState<"schema" | "history" | null>(null);
-  const dragRef = useRef<{ startY: number; startShare: number } | null>(null);
+  const centerPaneRef = useRef<HTMLDivElement>(null);
   const idRef = useRef(history.reduce((highestId, entry) => Math.max(highestId, entry.id), 0));
   const loadedRef = useRef(false);
   const autoRunRef = useRef(false);
@@ -288,6 +291,32 @@ export default function Home() {
     return { rows: result.rows.length, ms: result.elapsedMs, cols: result.columns.length };
   }, [result]);
 
+  const setBoundedEditorShare = useCallback((value: number) => {
+    setDividerY(Math.min(72, Math.max(22, Math.round(value))));
+  }, []);
+
+  const setEditorShareFromPointer = useCallback((clientY: number) => {
+    const bounds = centerPaneRef.current?.getBoundingClientRect();
+    if (!bounds || bounds.height === 0) return;
+    setBoundedEditorShare(((clientY - bounds.top) / bounds.height) * 100);
+  }, [setBoundedEditorShare]);
+
+  const resizeDividerWithKey = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setBoundedEditorShare(dividerY - 4);
+    } else if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setBoundedEditorShare(dividerY + 4);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      setBoundedEditorShare(22);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      setBoundedEditorShare(72);
+    }
+  }, [dividerY, setBoundedEditorShare]);
+
   return (
     <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
       {/* Header */}
@@ -399,27 +428,11 @@ export default function Home() {
         />
 
         {/* Center column */}
-        <div
-          className="flex-1 flex flex-col min-h-0 min-w-0"
-          onMouseMove={(e) => {
-            const drag = dragRef.current;
-            if (!drag) return;
-            const headerH = 48;
-            const total = e.currentTarget.offsetHeight - headerH;
-            const share = Math.min(85, Math.max(20, ((drag.startY - e.clientY) / total) * 100)) + drag.startShare;
-            setDividerY(100 - share);
-          }}
-          onMouseUp={() => {
-            dragRef.current = null;
-          }}
-          onMouseLeave={() => {
-            dragRef.current = null;
-          }}
-        >
+        <div ref={centerPaneRef} className="flex-1 flex flex-col min-h-0 min-w-0">
           {/* Editor pane */}
-          <div className="flex flex-col border-b border-border/70 bg-secondary/[0.035]" style={{ height: `${dividerY}%` }}>
-            <div className="px-4 py-1 border-b border-border/40 flex items-center gap-2 bg-transparent shrink-0">
-              <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground/85">Query draft</span>
+          <div className="flex flex-col shrink-0 min-h-0 overflow-hidden border-b border-border/45 bg-secondary/[0.01]" style={{ flexBasis: `${dividerY}%` }}>
+            <div className="px-4 py-1 border-b border-border/30 flex items-center gap-2 bg-transparent shrink-0">
+              <span className="text-[9px] font-medium uppercase tracking-[0.18em] text-muted-foreground/55">Query draft</span>
               {running && (
                 <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
                   <Loader2 className="h-3 w-3 animate-spin" /> executing
@@ -439,6 +452,10 @@ export default function Home() {
                         workspaceLabel={workspaceLabel}
                         onWorkspaceLabelChange={setWorkspaceLabel}
                         workspaceLabels={workspaceLabels}
+                        workspaceSearch={workspaceSearch}
+                        onWorkspaceSearchChange={setWorkspaceSearch}
+                        activeLabelFilters={activeLabelFilters}
+                        onActiveLabelFiltersChange={setActiveLabelFilters}
                 onLoadWorkspace={loadWorkspace}
                 onSaveWorkspace={saveWorkspace}
                 onNewWorkspace={newWorkspace}
@@ -463,20 +480,41 @@ export default function Home() {
           <div
             role="separator"
             aria-orientation="horizontal"
-            className="h-1.5 bg-transparent hover:bg-primary/15 cursor-row-resize flex items-center justify-center shrink-0 transition-colors duration-150"
-            onMouseDown={(e) => {
-              dragRef.current = { startY: e.clientY, startShare: 100 - dividerY };
+            aria-label="Resize query editor and results panes"
+            aria-valuemin={22}
+            aria-valuemax={72}
+            aria-valuenow={dividerY}
+            aria-valuetext={`Query editor occupies ${dividerY} percent of the console height`}
+            tabIndex={0}
+            className="group relative h-4 bg-primary/[0.025] hover:bg-primary/15 focus:bg-primary/15 cursor-row-resize touch-none select-none flex items-center justify-center shrink-0 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/65"
+            title="Drag up or down to resize. Use Arrow Up or Arrow Down when focused."
+            onPointerDown={(event) => {
+              if (event.pointerType === "mouse" && event.button !== 0) return;
+              event.preventDefault();
+              event.currentTarget.setPointerCapture(event.pointerId);
+              setEditorShareFromPointer(event.clientY);
             }}
+            onPointerMove={(event) => {
+              if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+              setEditorShareFromPointer(event.clientY);
+            }}
+            onPointerUp={(event) => {
+              if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+            }}
+            onPointerCancel={(event) => {
+              if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+            }}
+            onKeyDown={resizeDividerWithKey}
           >
-            <span className="h-[3px] w-10 rounded-full bg-border" />
+            <span className="h-[3px] w-12 rounded-full bg-border group-hover:bg-primary/65 group-focus:bg-primary/65 transition-colors duration-150" aria-hidden="true" />
           </div>
 
           {/* Results pane */}
-          <div className="flex-[1.55] flex flex-col min-h-0 overflow-hidden border-t-2 border-t-primary/70 bg-background shadow-[inset_0_1px_0_hsl(var(--background))]">
-            <div className="px-4 py-2.5 border-b border-border/50 bg-primary/[0.03] shrink-0 flex items-center gap-2">
-              <span className="inline-block h-2.5 w-2.5 bg-primary translate-y-[-1px] shadow-[5px_0_0_hsl(var(--primary)/0.16)]" aria-hidden="true" />
-              <span className="font-serif text-[15px] font-semibold tracking-tight text-foreground">Results ledger</span>
-              <span className="text-[9px] font-mono uppercase tracking-[0.2em] text-muted-foreground/80">current execution record</span>
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden border-t-[4px] border-t-primary bg-background shadow-[inset_0_1px_0_hsl(var(--background))]">
+            <div className="px-5 py-3.5 border-b border-primary/25 bg-primary/[0.055] shrink-0 flex items-center gap-3">
+              <span className="inline-block h-3.5 w-3.5 bg-primary translate-y-[-1px] shadow-[8px_0_0_hsl(var(--primary)/0.16)]" aria-hidden="true" />
+              <span className="font-serif text-[20px] font-semibold tracking-tight text-foreground">Results ledger</span>
+              <span className="text-[9px] font-mono uppercase tracking-[0.26em] text-muted-foreground/75">current execution record</span>
               {error && (
                 <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-destructive font-mono">
                   <AlertTriangle className="h-3 w-3" /> {error}

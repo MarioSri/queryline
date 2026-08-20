@@ -41,9 +41,11 @@ WebAssembly, and no SQL library.
   explicit lazy boundaries; Vite also isolates the icon and UI dependency
   groups from the initial application chunk.
 - **Portable filters and discoverable keys.** Browser-local filter presets can
-  be exported as validated JSON and merged back without replacing a matching
-  folder-and-name pair. A compact in-editor reference documents the supported
-  run, indent, filter-clear, and dismiss shortcuts.
+  be exported as validated JSON, reviewed before import, and merged back
+  without replacing a matching folder-and-name pair. A compact in-editor
+  reference documents the supported run, indent, filter-clear, and dismiss
+  shortcuts, while Ctrl/Cmd+K opens a searchable command palette for common
+  query and workspace actions.
 - **Read-only by construction.** The parser has no INSERT/UPDATE/DELETE
   production, so arbitrary SQL cannot mutate anything.
 
@@ -72,8 +74,11 @@ fast even when a query returns tens of thousands of rows.
   composable per-column filters. Named browser-local presets save and restore
   the global plus per-column criteria together and can be organised into named
   folders, with **General** as the legacy-safe fallback. A versioned preset
-  archive can be downloaded and merged into another browser, skipping matching
-  folder-and-name pairs rather than overwriting local work. Escape clears the
+  archive can be downloaded, reviewed locally, and explicitly merged into
+  another browser, skipping matching folder-and-name pairs rather than
+  overwriting local work. Recent preset imports remain visible during the
+  browser session and can be undone safely: only unchanged presets created by
+  that import are removed. Escape clears the
   focused filter, and a dedicated action clears all active filters. Only the
   current page is rendered, so a 50,000-row result set never touches the DOM
   in bulk.
@@ -87,12 +92,17 @@ fast even when a query returns tens of thousands of rows.
   regardless of casing or surrounding whitespace. Each save records a bounded
   local revision, which can be restored without contacting a server. An
   optional short label groups related drafts in the workspace selector without
-  changing the duplicate-safe workspace name. Export the workspace shelf as a
+  changing the duplicate-safe workspace name. Visible label chips filter the
+  shelf in one action, while name-or-label search narrows a crowded local
+  filing system. Export the workspace shelf as a
   portable, versioned JSON file; importing validates its shape, merges valid
   entries, and skips duplicate names rather than overwriting local work.
 - **Keyboard reference**: a compact editor panel lists Ctrl/Cmd+Enter to run,
   Tab to indent in an editable query, Escape to clear the focused result
-  filter, and Escape to close the reference itself.
+  filter, and Escape to close the reference itself. Ctrl/Cmd+K opens a
+  searchable command palette for running, saving, sharing, and focusing common
+  workspace actions. Arrow keys select the active command and Enter runs it
+  without leaving the search field.
 - **Read-only links**: copy a compact URL for a SQL draft, open it in any
   browser to execute and inspect without mutating the draft, then create a
   local editable copy when experimentation is needed. Links use the browser
