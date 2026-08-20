@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PAGE_SIZE, deleteHistoryEntry, deleteWorkspace, findDuplicateWorkspace, mergeImportedWorkspaces, parseFilterPresets, parseHistory, parsePageSize, parseWorkspaceArchive, parseWorkspaces, serializeWorkspaceArchive, toggleHistoryPin, upsertFilterPreset, upsertWorkspace } from "./preferences";
+import { DEFAULT_FILTER_PRESET_FOLDER, DEFAULT_PAGE_SIZE, deleteHistoryEntry, deleteWorkspace, deleteWorkspaceRevisions, findDuplicateWorkspace, getWorkspaceRevisions, mergeImportedWorkspaces, parseFilterPresets, parseHistory, parsePageSize, parseWorkspaceArchive, parseWorkspaceRevisions, parseWorkspaces, recordWorkspaceRevision, serializeWorkspaceArchive, toggleHistoryPin, upsertFilterPreset, upsertWorkspace } from "./preferences";
 
 describe("Queryline preferences", () => {
   it("accepts only supported page sizes", () => {
@@ -65,6 +65,23 @@ describe("Queryline preferences", () => {
     const parsed = parseFilterPresets(JSON.stringify([{ id: "march", name: "March orders", filter: "paid", columnFilters: { 2: "2024-03" }, createdAt: 1, updatedAt: 2 }, { id: "bad", name: "", filter: "x", columnFilters: {}, createdAt: 1, updatedAt: 2 }]));
     expect(parsed).toHaveLength(1);
     const updated = upsertFilterPreset(parsed, { id: "march", name: "March orders", filter: "paid", columnFilters: { 2: "2024-04" }, createdAt: 1, updatedAt: 3 });
-    expect(updated).toEqual([{ id: "march", name: "March orders", filter: "paid", columnFilters: { 2: "2024-04" }, createdAt: 1, updatedAt: 3 }]);
+    expect(updated).toEqual([{ id: "march", name: "March orders", folder: "General", filter: "paid", columnFilters: { 2: "2024-04" }, createdAt: 1, updatedAt: 3 }]);
+  });
+
+  it("organizes filter presets into folders while allowing matching names in different folders", () => {
+    const saved = parseFilterPresets(JSON.stringify([{ id: "march", name: "Orders", folder: "Finance", filter: "paid", columnFilters: {}, createdAt: 1, updatedAt: 2 }]));
+    expect(saved[0].folder).toBe("Finance");
+    const separateFolder = upsertFilterPreset(saved, { id: "ops", name: "Orders", folder: "Operations", filter: "open", columnFilters: {}, createdAt: 2, updatedAt: 3 });
+    expect(separateFolder).toHaveLength(2);
+    expect(parseFilterPresets(JSON.stringify([{ id: "legacy", name: "Legacy", filter: "x", columnFilters: {}, createdAt: 1, updatedAt: 2 }]))[0].folder).toBe(DEFAULT_FILTER_PRESET_FOLDER);
+  });
+
+  it("records bounded workspace revisions and removes them with their workspace", () => {
+    const workspace = { id: "revenue", name: "Revenue", sql: "SELECT 1", createdAt: 1, updatedAt: 1 };
+    const first = recordWorkspaceRevision({}, workspace, 10);
+    const second = recordWorkspaceRevision(first, { ...workspace, sql: "SELECT 2", updatedAt: 20 }, 20);
+    expect(getWorkspaceRevisions(second, "revenue").map((revision) => revision.sql)).toEqual(["SELECT 2", "SELECT 1"]);
+    expect(parseWorkspaceRevisions(JSON.stringify(second)).revenue).toHaveLength(2);
+    expect(deleteWorkspaceRevisions(second, "revenue")).toEqual({});
   });
 });

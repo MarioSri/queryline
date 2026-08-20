@@ -8,9 +8,9 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import SchemaSidebar from "@/components/SchemaSidebar";
 import HistoryRail from "@/components/HistoryRail";
 import type { QueryResult } from "@/lib/engine";
-import { deleteHistoryEntry, deleteWorkspace, findDuplicateWorkspace, loadHistory, loadWorkspaces, mergeImportedWorkspaces, parseWorkspaceArchive, saveHistory, saveWorkspaces, serializeWorkspaceArchive, toggleHistoryPin, upsertWorkspace, type QueryHistoryEntry } from "@/lib/preferences";
+import { deleteHistoryEntry, deleteWorkspace, deleteWorkspaceRevisions, findDuplicateWorkspace, getWorkspaceRevisions, loadHistory, loadWorkspaceRevisions, loadWorkspaces, mergeImportedWorkspaces, parseWorkspaceArchive, recordWorkspaceRevision, saveHistory, saveWorkspaceRevisions, saveWorkspaces, serializeWorkspaceArchive, toggleHistoryPin, upsertWorkspace, type QueryHistoryEntry, type WorkspaceRevision } from "@/lib/preferences";
 import { SAMPLE_QUERIES } from "@/lib/catalog";
-import { copySharedQueryLink, getSharedQueryLinkDetails, readSharedQueryFromUrl, removeSharedQueryFromUrl } from "@/lib/shareLink";
+import { copySharedQueryLink, getSharedQueryLinkDetails, readSharedQueryFromUrl, removeSharedQueryFromUrl, type ShareLinkMode } from "@/lib/shareLink";
 import { toast } from "sonner";
 import { AlertTriangle, Timer, Rows3, Loader2 } from "lucide-react";
 
@@ -37,8 +37,10 @@ export default function Home() {
   const [running, setRunning] = useState(false);
   const [history, setHistory] = useState<QueryHistoryEntry[]>(() => loadHistory());
   const [workspaces, setWorkspaces] = useState(() => loadWorkspaces());
+  const [workspaceRevisions, setWorkspaceRevisions] = useState(() => loadWorkspaceRevisions());
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   const [workspaceName, setWorkspaceName] = useState("Untitled query");
+  const [shareLinkMode, setShareLinkMode] = useState<ShareLinkMode>("standard");
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [dividerY, setDividerY] = useState(36); // editor share %; results deliberately lead the console
   const [compactPanel, setCompactPanel] = useState<"schema" | "history" | null>(null);
@@ -121,6 +123,10 @@ export default function Home() {
     saveWorkspaces(workspaces);
   }, [workspaces]);
 
+  useEffect(() => {
+    saveWorkspaceRevisions(workspaceRevisions);
+  }, [workspaceRevisions]);
+
   const restore = useCallback((s: string) => {
     if (sharedReadOnly) {
       toast.error("This shared query is read-only. Make an editable copy first.");
@@ -173,6 +179,9 @@ export default function Home() {
       toast.error(`A workspace named “${trimmedName}” already exists. Choose another name.`);
       return;
     }
+    if (active && (active.name !== workspace.name || active.sql !== workspace.sql)) {
+      setWorkspaceRevisions((entries) => recordWorkspaceRevision(entries, active));
+    }
     setWorkspaces((entries) => upsertWorkspace(entries, workspace));
     setActiveWorkspaceId(workspace.id);
     setWorkspaceName(workspace.name);
@@ -186,10 +195,20 @@ export default function Home() {
   const removeWorkspace = useCallback(() => {
     if (!activeWorkspaceId) return;
     setWorkspaces((entries) => deleteWorkspace(entries, activeWorkspaceId));
+    setWorkspaceRevisions((entries) => deleteWorkspaceRevisions(entries, activeWorkspaceId));
     setActiveWorkspaceId(null);
     setWorkspaceName("Untitled query");
     toast.success("Workspace deleted");
   }, [activeWorkspaceId]);
+  const restoreWorkspaceRevision = useCallback((revision: WorkspaceRevision) => {
+    if (sharedReadOnly) {
+      toast.error("This shared query is read-only. Make an editable copy first.");
+      return;
+    }
+    setSql(revision.sql);
+    setWorkspaceName(revision.name);
+    toast.success("Earlier revision restored as a draft. Save to keep it.");
+  }, [sharedReadOnly]);
   const duplicateWorkspace = useMemo(
     () => findDuplicateWorkspace(workspaces, workspaceName, activeWorkspaceId),
     [activeWorkspaceId, workspaceName, workspaces]
@@ -197,24 +216,24 @@ export default function Home() {
   const shareLinkDetails = useMemo(() => {
     if (typeof window === "undefined") return null;
     try {
-      return getSharedQueryLinkDetails(sql, window.location.href);
+      return getSharedQueryLinkDetails(sql, window.location.href, shareLinkMode);
     } catch {
       return null;
     }
-  }, [sql]);
+  }, [shareLinkMode, sql]);
   const shareLinkHint = shareLinkDetails
     ? `${shareLinkDetails.length.toLocaleString("en-US")} characters${shareLinkDetails.needsCaution ? " · long links can be blocked by some tools" : " · ready to copy"}`
     : null;
   const shareQuery = useCallback(async () => {
     try {
-      const details = getSharedQueryLinkDetails(sql, window.location.href);
-      await copySharedQueryLink(sql, window.location.href);
+      const details = getSharedQueryLinkDetails(sql, window.location.href, shareLinkMode);
+      await copySharedQueryLink(sql, window.location.href, shareLinkMode);
       if (details.needsCaution) toast.warning(`Read-only link copied (${details.length.toLocaleString("en-US")} characters). Some tools may reject long URLs.`);
       else toast.success(`Read-only query link copied (${details.length.toLocaleString("en-US")} characters)`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not create a share link.");
     }
-  }, [sql]);
+  }, [shareLinkMode, sql]);
   const exportWorkspaces = useCallback(() => {
     if (typeof document === "undefined") return;
     const blob = new Blob([serializeWorkspaceArchive(workspaces)], { type: "application/json" });
@@ -414,11 +433,15 @@ export default function Home() {
                 isDuplicateWorkspaceName={Boolean(duplicateWorkspace)}
                 readOnly={sharedReadOnly}
                 onShareQuery={() => void shareQuery()}
+                shareLinkMode={shareLinkMode}
+                onShareLinkModeChange={setShareLinkMode}
                 onMakeEditableCopy={makeEditableCopy}
                 shareLinkHint={shareLinkHint}
                 shareLinkNeedsCaution={shareLinkDetails?.needsCaution ?? false}
                 onExportWorkspaces={exportWorkspaces}
                 onImportWorkspaces={importWorkspaces}
+                workspaceRevisions={getWorkspaceRevisions(workspaceRevisions, activeWorkspaceId)}
+                onRestoreWorkspaceRevision={restoreWorkspaceRevision}
               />
             </Suspense>
           </div>

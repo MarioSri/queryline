@@ -8,7 +8,8 @@
 import { useEffect, useRef } from "react";
 import { Play, Loader2 } from "lucide-react";
 import WorkspaceShelf from "@/components/WorkspaceShelf";
-import type { QueryWorkspace } from "@/lib/preferences";
+import type { QueryWorkspace, WorkspaceRevision } from "@/lib/preferences";
+import type { ShareLinkMode } from "@/lib/shareLink";
 
 interface Props {
   value: string;
@@ -26,11 +27,15 @@ interface Props {
   isDuplicateWorkspaceName: boolean;
   readOnly: boolean;
   onShareQuery: () => void;
+  shareLinkMode: ShareLinkMode;
+  onShareLinkModeChange: (mode: ShareLinkMode) => void;
   onMakeEditableCopy: () => void;
   shareLinkHint: string | null;
   shareLinkNeedsCaution: boolean;
   onExportWorkspaces: () => void;
   onImportWorkspaces: (file: File) => void | Promise<void>;
+  workspaceRevisions: WorkspaceRevision[];
+  onRestoreWorkspaceRevision: (revision: WorkspaceRevision) => void;
 }
 
 export default function QueryEditor({
@@ -49,11 +54,15 @@ export default function QueryEditor({
   isDuplicateWorkspaceName,
   readOnly,
   onShareQuery,
+  shareLinkMode,
+  onShareLinkModeChange,
   onMakeEditableCopy,
   shareLinkHint,
   shareLinkNeedsCaution,
   onExportWorkspaces,
   onImportWorkspaces,
+  workspaceRevisions,
+  onRestoreWorkspaceRevision,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -105,11 +114,15 @@ export default function QueryEditor({
         isDuplicateName={isDuplicateWorkspaceName}
         readOnly={readOnly}
         onShareQuery={onShareQuery}
+        shareLinkMode={shareLinkMode}
+        onShareLinkModeChange={onShareLinkModeChange}
         onMakeEditableCopy={onMakeEditableCopy}
         shareLinkHint={shareLinkHint}
         shareLinkNeedsCaution={shareLinkNeedsCaution}
         onExportWorkspaces={onExportWorkspaces}
         onImportWorkspaces={onImportWorkspaces}
+        workspaceRevisions={workspaceRevisions}
+        onRestoreWorkspaceRevision={onRestoreWorkspaceRevision}
       />
       <div className="flex items-center justify-between px-4 py-2 border-t border-border/60 bg-card/60">
         <span className="text-[11px] text-muted-foreground font-mono">

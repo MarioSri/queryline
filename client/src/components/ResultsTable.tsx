@@ -16,7 +16,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BookmarkPlus, ClipboardCopy, Download, FileJson, ListFilter, Search, Trash2, X } from "lucide-react";
 import { copyResultPageAsJson, downloadCsv, downloadJson } from "@/lib/csv";
-import { DEFAULT_PAGE_SIZE, deleteFilterPreset, loadFilterPresets, loadPageSize, PAGE_SIZES, saveFilterPresets, savePageSize, upsertFilterPreset, type PageSize, type ResultFilterPreset } from "@/lib/preferences";
+import { DEFAULT_FILTER_PRESET_FOLDER, DEFAULT_PAGE_SIZE, deleteFilterPreset, listFilterPresetFolders, loadFilterPresets, loadPageSize, PAGE_SIZES, saveFilterPresets, savePageSize, upsertFilterPreset, type PageSize, type ResultFilterPreset } from "@/lib/preferences";
 import { activeColumnFilterCount, filterResultRows, formatResultValue, type ColumnFilters } from "@/lib/tableFilter";
 import { toast } from "sonner";
 
@@ -36,6 +36,7 @@ export default function ResultsTable({ columns, rows }: Props) {
   const [showColumnFilters, setShowColumnFilters] = useState(false);
   const [filterPresets, setFilterPresets] = useState<ResultFilterPreset[]>(() => loadFilterPresets());
   const [presetName, setPresetName] = useState("");
+  const [presetFolder, setPresetFolder] = useState(DEFAULT_FILTER_PRESET_FOLDER);
   const [activePresetId, setActivePresetId] = useState("");
   const filterRef = useRef<HTMLInputElement>(null);
 
@@ -61,6 +62,7 @@ export default function ResultsTable({ columns, rows }: Props) {
   const filteredRows = useMemo(() => filterResultRows(rows, filter, columnFilters), [rows, filter, columnFilters]);
   const rowCount = filteredRows.length;
   const columnFilterCount = activeColumnFilterCount(columnFilters);
+  const presetFolders = useMemo(() => listFilterPresetFolders(filterPresets), [filterPresets]);
   const totalPages = Math.max(1, Math.ceil(rowCount / pageSize));
   const safePage = Math.min(page, totalPages);
 
@@ -127,11 +129,12 @@ export default function ResultsTable({ columns, rows }: Props) {
       toast.error("Name this filter preset before saving it.");
       return;
     }
-    const existing = filterPresets.find((preset) => preset.name.trim().toLocaleLowerCase() === name.toLocaleLowerCase());
+    const existing = filterPresets.find((preset) => preset.name.trim().toLocaleLowerCase() === name.toLocaleLowerCase() && (preset.folder ?? DEFAULT_FILTER_PRESET_FOLDER).trim().toLocaleLowerCase() === presetFolder.trim().toLocaleLowerCase());
     const now = Date.now();
     const preset: ResultFilterPreset = {
       id: existing?.id ?? (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `filter-${now}`),
       name,
+      folder: presetFolder ?? DEFAULT_FILTER_PRESET_FOLDER,
       filter,
       columnFilters,
       createdAt: existing?.createdAt ?? now,
@@ -147,6 +150,7 @@ export default function ResultsTable({ columns, rows }: Props) {
     const preset = filterPresets.find((entry) => entry.id === id);
     if (!preset) return;
     setPresetName(preset.name);
+    setPresetFolder(preset.folder ?? DEFAULT_FILTER_PRESET_FOLDER);
     setFilter(preset.filter);
     setColumnFilters(preset.columnFilters);
     setShowColumnFilters(Object.keys(preset.columnFilters).length > 0);
@@ -158,6 +162,7 @@ export default function ResultsTable({ columns, rows }: Props) {
     setFilterPresets((entries) => deleteFilterPreset(entries, activePresetId));
     setActivePresetId("");
     setPresetName("");
+    setPresetFolder(DEFAULT_FILTER_PRESET_FOLDER);
     toast.success("Filter preset removed");
   };
 
@@ -219,7 +224,11 @@ export default function ResultsTable({ columns, rows }: Props) {
             className="max-w-[8.5rem] bg-transparent border-0 border-b border-border px-1 py-1 text-[11px] font-mono text-muted-foreground focus:outline-none focus:border-primary"
           >
             <option value="">Filter presets</option>
-            {filterPresets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+            {presetFolders.map((folder) => (
+              <optgroup key={folder} label={folder}>
+                {filterPresets.filter((preset) => preset.folder === folder).map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+              </optgroup>
+            ))}
           </select>
           <label htmlFor="filter-preset-name" className="sr-only">Filter preset name</label>
           <input
@@ -230,6 +239,19 @@ export default function ResultsTable({ columns, rows }: Props) {
             maxLength={60}
             className="hidden min-w-[6.5rem] bg-transparent border-0 border-b border-border px-1 py-1 text-[11px] font-mono text-foreground placeholder:text-muted-foreground/65 focus:outline-none focus:border-primary sm:block"
           />
+          <label htmlFor="filter-preset-folder" className="sr-only">Filter preset folder</label>
+          <input
+            id="filter-preset-folder"
+            value={presetFolder}
+            onChange={(event) => setPresetFolder(event.target.value)}
+            placeholder="Folder"
+            maxLength={40}
+            list="filter-preset-folders"
+            className="hidden w-[5.5rem] bg-transparent border-0 border-b border-border px-1 py-1 text-[11px] font-mono text-foreground placeholder:text-muted-foreground/65 focus:outline-none focus:border-primary lg:block"
+          />
+          <datalist id="filter-preset-folders">
+            {presetFolders.map((folder) => <option key={folder} value={folder} />)}
+          </datalist>
           <button
             type="button"
             onClick={saveFilterPreset}
