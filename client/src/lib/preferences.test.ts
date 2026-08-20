@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PAGE_SIZE, deleteHistoryEntry, deleteWorkspace, findDuplicateWorkspace, parseHistory, parsePageSize, parseWorkspaces, toggleHistoryPin, upsertWorkspace } from "./preferences";
+import { DEFAULT_PAGE_SIZE, deleteHistoryEntry, deleteWorkspace, findDuplicateWorkspace, mergeImportedWorkspaces, parseFilterPresets, parseHistory, parsePageSize, parseWorkspaceArchive, parseWorkspaces, serializeWorkspaceArchive, toggleHistoryPin, upsertFilterPreset, upsertWorkspace } from "./preferences";
 
 describe("Queryline preferences", () => {
   it("accepts only supported page sizes", () => {
@@ -43,5 +43,28 @@ describe("Queryline preferences", () => {
     expect(findDuplicateWorkspace(saved, " monthly   revenue ")?.id).toBe("revenue");
     expect(findDuplicateWorkspace(saved, "Monthly Revenue", "revenue")).toBeUndefined();
     expect(upsertWorkspace(saved, { id: "copy", name: "MONTHLY revenue", sql: "SELECT 3", createdAt: 30, updatedAt: 30 })).toEqual(saved);
+  });
+
+  it("exports validated workspaces and merges imports without overwriting same-named local drafts", () => {
+    const existing = parseWorkspaces(JSON.stringify([{ id: "revenue", name: "Revenue", sql: "SELECT 1", createdAt: 1, updatedAt: 3 }]));
+    const archive = serializeWorkspaceArchive([
+      { id: "revenue", name: "New query", sql: "SELECT 2", createdAt: 2, updatedAt: 4 },
+      { id: "duplicate", name: " revenue ", sql: "SELECT 3", createdAt: 2, updatedAt: 5 },
+    ], "2026-08-20T00:00:00.000Z");
+    const imported = parseWorkspaceArchive(archive);
+    expect(imported?.length).toBe(2);
+    const merged = mergeImportedWorkspaces(existing, imported ?? []);
+    expect(merged.imported).toBe(1);
+    expect(merged.skipped).toBe(1);
+    expect(merged.workspaces.map((workspace) => workspace.name)).toEqual(["New query", "Revenue"]);
+    expect(merged.workspaces[0].id).toBe("revenue-imported");
+    expect(parseWorkspaceArchive('{"format":"wrong"}')).toBeNull();
+  });
+
+  it("validates and updates named presets containing global and column filters", () => {
+    const parsed = parseFilterPresets(JSON.stringify([{ id: "march", name: "March orders", filter: "paid", columnFilters: { 2: "2024-03" }, createdAt: 1, updatedAt: 2 }, { id: "bad", name: "", filter: "x", columnFilters: {}, createdAt: 1, updatedAt: 2 }]));
+    expect(parsed).toHaveLength(1);
+    const updated = upsertFilterPreset(parsed, { id: "march", name: "March orders", filter: "paid", columnFilters: { 2: "2024-04" }, createdAt: 1, updatedAt: 3 });
+    expect(updated).toEqual([{ id: "march", name: "March orders", filter: "paid", columnFilters: { 2: "2024-04" }, createdAt: 1, updatedAt: 3 }]);
   });
 });

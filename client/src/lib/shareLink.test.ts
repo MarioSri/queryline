@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createSharedQueryUrl, MAX_SHARED_QUERY_LENGTH, readSharedQueryFromUrl, removeSharedQueryFromUrl } from "./shareLink";
+import { CAUTION_SHARED_URL_LENGTH, createSharedQueryUrl, getSharedQueryLinkDetails, MAX_SHARED_QUERY_LENGTH, readSharedQueryFromUrl, removeSharedQueryFromUrl } from "./shareLink";
 
 describe("read-only query links", () => {
   it("encodes and restores only a trimmed SQL draft", () => {
@@ -17,5 +17,13 @@ describe("read-only query links", () => {
   it("removes only the shared query parameter when an editable copy is created", () => {
     expect(removeSharedQueryFromUrl("https://queryline.example/?view=ledger&q=SELECT%201#results"))
       .toBe("https://queryline.example/?view=ledger#results");
+  });
+
+  it("reports the actual URL length and flags links above the portability caution threshold", () => {
+    const compact = getSharedQueryLinkDetails("SELECT 1", "https://queryline.example/");
+    const long = getSharedQueryLinkDetails(`SELECT '${"x".repeat(CAUTION_SHARED_URL_LENGTH)}'`, "https://queryline.example/");
+    expect(compact.length).toBe(compact.url.length);
+    expect(compact.needsCaution).toBe(false);
+    expect(long.needsCaution).toBe(true);
   });
 });

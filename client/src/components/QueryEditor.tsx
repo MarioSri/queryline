@@ -27,6 +27,10 @@ interface Props {
   readOnly: boolean;
   onShareQuery: () => void;
   onMakeEditableCopy: () => void;
+  shareLinkHint: string | null;
+  shareLinkNeedsCaution: boolean;
+  onExportWorkspaces: () => void;
+  onImportWorkspaces: (file: File) => void | Promise<void>;
 }
 
 export default function QueryEditor({
@@ -46,6 +50,10 @@ export default function QueryEditor({
   readOnly,
   onShareQuery,
   onMakeEditableCopy,
+  shareLinkHint,
+  shareLinkNeedsCaution,
+  onExportWorkspaces,
+  onImportWorkspaces,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -98,6 +106,10 @@ export default function QueryEditor({
         readOnly={readOnly}
         onShareQuery={onShareQuery}
         onMakeEditableCopy={onMakeEditableCopy}
+        shareLinkHint={shareLinkHint}
+        shareLinkNeedsCaution={shareLinkNeedsCaution}
+        onExportWorkspaces={onExportWorkspaces}
+        onImportWorkspaces={onImportWorkspaces}
       />
       <div className="flex items-center justify-between px-4 py-2 border-t border-border/60 bg-card/60">
         <span className="text-[11px] text-muted-foreground font-mono">

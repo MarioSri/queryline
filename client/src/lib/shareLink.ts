@@ -7,6 +7,13 @@
 
 const SHARED_QUERY_PARAM = "q";
 export const MAX_SHARED_QUERY_LENGTH = 6_000;
+export const CAUTION_SHARED_URL_LENGTH = 1_800;
+
+export interface SharedQueryLinkDetails {
+  url: string;
+  length: number;
+  needsCaution: boolean;
+}
 
 function normalizeSharedQuery(value: string | null): string | null {
   const query = value?.trim() ?? "";
@@ -22,6 +29,11 @@ export function createSharedQueryUrl(sql: string, baseUrl: string): string {
   const url = new URL(baseUrl);
   url.searchParams.set(SHARED_QUERY_PARAM, query);
   return url.toString();
+}
+
+export function getSharedQueryLinkDetails(sql: string, baseUrl: string): SharedQueryLinkDetails {
+  const url = createSharedQueryUrl(sql, baseUrl);
+  return { url, length: url.length, needsCaution: url.length > CAUTION_SHARED_URL_LENGTH };
 }
 
 export function readSharedQueryFromUrl(url: string): string | null {

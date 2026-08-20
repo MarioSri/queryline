@@ -8,9 +8,9 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import SchemaSidebar from "@/components/SchemaSidebar";
 import HistoryRail from "@/components/HistoryRail";
 import type { QueryResult } from "@/lib/engine";
-import { deleteHistoryEntry, deleteWorkspace, findDuplicateWorkspace, loadHistory, loadWorkspaces, saveHistory, saveWorkspaces, toggleHistoryPin, upsertWorkspace, type QueryHistoryEntry } from "@/lib/preferences";
+import { deleteHistoryEntry, deleteWorkspace, findDuplicateWorkspace, loadHistory, loadWorkspaces, mergeImportedWorkspaces, parseWorkspaceArchive, saveHistory, saveWorkspaces, serializeWorkspaceArchive, toggleHistoryPin, upsertWorkspace, type QueryHistoryEntry } from "@/lib/preferences";
 import { SAMPLE_QUERIES } from "@/lib/catalog";
-import { copySharedQueryLink, readSharedQueryFromUrl, removeSharedQueryFromUrl } from "@/lib/shareLink";
+import { copySharedQueryLink, getSharedQueryLinkDetails, readSharedQueryFromUrl, removeSharedQueryFromUrl } from "@/lib/shareLink";
 import { toast } from "sonner";
 import { AlertTriangle, Timer, Rows3, Loader2 } from "lucide-react";
 
@@ -194,14 +194,58 @@ export default function Home() {
     () => findDuplicateWorkspace(workspaces, workspaceName, activeWorkspaceId),
     [activeWorkspaceId, workspaceName, workspaces]
   );
+  const shareLinkDetails = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      return getSharedQueryLinkDetails(sql, window.location.href);
+    } catch {
+      return null;
+    }
+  }, [sql]);
+  const shareLinkHint = shareLinkDetails
+    ? `${shareLinkDetails.length.toLocaleString("en-US")} characters${shareLinkDetails.needsCaution ? " · long links can be blocked by some tools" : " · ready to copy"}`
+    : null;
   const shareQuery = useCallback(async () => {
     try {
+      const details = getSharedQueryLinkDetails(sql, window.location.href);
       await copySharedQueryLink(sql, window.location.href);
-      toast.success("Read-only query link copied");
+      if (details.needsCaution) toast.warning(`Read-only link copied (${details.length.toLocaleString("en-US")} characters). Some tools may reject long URLs.`);
+      else toast.success(`Read-only query link copied (${details.length.toLocaleString("en-US")} characters)`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not create a share link.");
     }
   }, [sql]);
+  const exportWorkspaces = useCallback(() => {
+    if (typeof document === "undefined") return;
+    const blob = new Blob([serializeWorkspaceArchive(workspaces)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "queryline-workspaces.json";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    toast.success(`${workspaces.length} workspace${workspaces.length === 1 ? "" : "s"} exported`);
+  }, [workspaces]);
+  const importWorkspaces = useCallback(async (file: File) => {
+    try {
+      const incoming = parseWorkspaceArchive(await file.text());
+      if (!incoming) {
+        toast.error("Choose a valid Queryline workspace JSON file.");
+        return;
+      }
+      const merged = mergeImportedWorkspaces(workspaces, incoming);
+      if (merged.imported === 0) {
+        toast("No workspaces were imported; names already exist or the local shelf is full.");
+        return;
+      }
+      setWorkspaces(merged.workspaces);
+      toast.success(`${merged.imported} workspace${merged.imported === 1 ? "" : "s"} imported${merged.skipped ? ` · ${merged.skipped} duplicate${merged.skipped === 1 ? "" : "s"} skipped` : ""}`);
+    } catch {
+      toast.error("This workspace file could not be read.");
+    }
+  }, [workspaces]);
   const makeEditableCopy = useCallback(() => {
     setSharedReadOnly(false);
     setActiveWorkspaceId(null);
@@ -344,7 +388,7 @@ export default function Home() {
           }}
         >
           {/* Editor pane */}
-          <div className="flex flex-col border-b border-border/70 bg-secondary/[0.12]" style={{ height: `${dividerY}%` }}>
+          <div className="flex flex-col border-b border-border/70 bg-secondary/[0.08]" style={{ height: `${dividerY}%` }}>
             <div className="px-4 py-1.5 border-b border-border/40 flex items-center gap-2 bg-secondary/35 shrink-0">
               <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Query draft</span>
               {running && (
@@ -371,6 +415,10 @@ export default function Home() {
                 readOnly={sharedReadOnly}
                 onShareQuery={() => void shareQuery()}
                 onMakeEditableCopy={makeEditableCopy}
+                shareLinkHint={shareLinkHint}
+                shareLinkNeedsCaution={shareLinkDetails?.needsCaution ?? false}
+                onExportWorkspaces={exportWorkspaces}
+                onImportWorkspaces={importWorkspaces}
               />
             </Suspense>
           </div>
@@ -388,10 +436,11 @@ export default function Home() {
           </div>
 
           {/* Results pane */}
-          <div className="flex-[1.18] flex flex-col min-h-0 overflow-hidden bg-background">
-            <div className="px-4 py-1.5 border-b border-border/40 bg-primary/[0.035] shrink-0 flex items-center gap-2">
-              <span className="inline-block h-1.5 w-1.5 bg-primary translate-y-[-1px]" aria-hidden="true" />
-              <span className="text-[11px] font-semibold uppercase tracking-widest text-foreground">Results ledger</span>
+          <div className="flex-[1.32] flex flex-col min-h-0 overflow-hidden border-t-2 border-t-primary/65 bg-background shadow-[inset_0_1px_0_hsl(var(--background))]">
+            <div className="px-4 py-2 border-b border-border/50 bg-primary/[0.045] shrink-0 flex items-center gap-2">
+              <span className="inline-block h-2 w-2 bg-primary translate-y-[-1px] shadow-[4px_0_0_hsl(var(--primary)/0.16)]" aria-hidden="true" />
+              <span className="font-serif text-[13px] font-semibold tracking-tight text-foreground">Results ledger</span>
+              <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">execution record</span>
               {error && (
                 <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-destructive font-mono">
                   <AlertTriangle className="h-3 w-3" /> {error}

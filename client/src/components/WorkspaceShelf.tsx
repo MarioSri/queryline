@@ -4,8 +4,9 @@
  * console's paper-and-ink density while keeping workspace actions explicit.
  */
 
+import { useRef } from "react";
 import type { QueryWorkspace } from "@/lib/preferences";
-import { Bookmark, CopyPlus, Link2, Plus, Save, Trash2 } from "lucide-react";
+import { Bookmark, CopyPlus, Download, Link2, Plus, Save, Trash2, Upload } from "lucide-react";
 
 interface Props {
   workspaces: QueryWorkspace[];
@@ -20,6 +21,10 @@ interface Props {
   readOnly: boolean;
   onShareQuery: () => void;
   onMakeEditableCopy: () => void;
+  shareLinkHint: string | null;
+  shareLinkNeedsCaution: boolean;
+  onExportWorkspaces: () => void;
+  onImportWorkspaces: (file: File) => void | Promise<void>;
 }
 
 export default function WorkspaceShelf({
@@ -35,7 +40,12 @@ export default function WorkspaceShelf({
   readOnly,
   onShareQuery,
   onMakeEditableCopy,
+  shareLinkHint,
+  shareLinkNeedsCaution,
+  onExportWorkspaces,
+  onImportWorkspaces,
 }: Props) {
+  const importRef = useRef<HTMLInputElement>(null);
   if (readOnly) {
     return (
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-4 py-1.5 border-t border-border/40 bg-secondary/25">
@@ -46,9 +56,11 @@ export default function WorkspaceShelf({
           onClick={onShareQuery}
           className="inline-flex items-center gap-1 border-l border-border/60 px-2 py-1 text-[11px] font-mono text-muted-foreground hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary/60 transition-colors duration-150 active:scale-[0.97]"
           title="Copy this read-only query link"
+          aria-describedby={shareLinkHint ? "share-link-help" : undefined}
         >
           <Link2 className="h-3 w-3" aria-hidden="true" /> Copy link
         </button>
+        {shareLinkHint && <output id="share-link-help" className={`text-[10px] font-mono ${shareLinkNeedsCaution ? "text-amber-700" : "text-muted-foreground"}`}>{shareLinkHint}</output>}
         <button
           type="button"
           onClick={onMakeEditableCopy}
@@ -117,11 +129,43 @@ export default function WorkspaceShelf({
         type="button"
         onClick={onShareQuery}
         title="Copy a read-only link for this SQL draft"
+        aria-describedby={shareLinkHint ? "share-link-help" : undefined}
         className="inline-flex items-center gap-1 border-l border-border/60 px-2 py-1 text-[11px] font-mono text-muted-foreground hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary/60 transition-colors duration-150 active:scale-[0.97]"
       >
         <Link2 className="h-3 w-3" aria-hidden="true" />
         Share
       </button>
+      {shareLinkHint && <output id="share-link-help" className={`text-[10px] font-mono ${shareLinkNeedsCaution ? "text-amber-700" : "text-muted-foreground"}`}>{shareLinkHint}</output>}
+      <div className="inline-flex items-center border-l border-border/60">
+        <button
+          type="button"
+          onClick={onExportWorkspaces}
+          className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-mono text-muted-foreground hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary/60 transition-colors duration-150 active:scale-[0.97]"
+          title="Download all saved workspaces as a JSON file"
+        >
+          <Download className="h-3 w-3" aria-hidden="true" /> Export
+        </button>
+        <input
+          ref={importRef}
+          type="file"
+          accept="application/json,.json"
+          className="sr-only"
+          aria-label="Import Queryline workspace JSON file"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) void onImportWorkspaces(file);
+            event.target.value = "";
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => importRef.current?.click()}
+          className="inline-flex items-center gap-1 border-l border-border/60 px-2 py-1 text-[11px] font-mono text-muted-foreground hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary/60 transition-colors duration-150 active:scale-[0.97]"
+          title="Merge saved workspaces from a Queryline JSON file"
+        >
+          <Upload className="h-3 w-3" aria-hidden="true" /> Import
+        </button>
+      </div>
       <button
         type="button"
         onClick={onDeleteWorkspace}

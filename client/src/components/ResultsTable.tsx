@@ -14,9 +14,9 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ClipboardCopy, Download, FileJson, ListFilter, Search, X } from "lucide-react";
+import { BookmarkPlus, ClipboardCopy, Download, FileJson, ListFilter, Search, Trash2, X } from "lucide-react";
 import { copyResultPageAsJson, downloadCsv, downloadJson } from "@/lib/csv";
-import { DEFAULT_PAGE_SIZE, loadPageSize, PAGE_SIZES, savePageSize, type PageSize } from "@/lib/preferences";
+import { DEFAULT_PAGE_SIZE, deleteFilterPreset, loadFilterPresets, loadPageSize, PAGE_SIZES, saveFilterPresets, savePageSize, upsertFilterPreset, type PageSize, type ResultFilterPreset } from "@/lib/preferences";
 import { activeColumnFilterCount, filterResultRows, formatResultValue, type ColumnFilters } from "@/lib/tableFilter";
 import { toast } from "sonner";
 
@@ -34,11 +34,18 @@ export default function ResultsTable({ columns, rows }: Props) {
   const [filter, setFilter] = useState("");
   const [columnFilters, setColumnFilters] = useState<ColumnFilters>({});
   const [showColumnFilters, setShowColumnFilters] = useState(false);
+  const [filterPresets, setFilterPresets] = useState<ResultFilterPreset[]>(() => loadFilterPresets());
+  const [presetName, setPresetName] = useState("");
+  const [activePresetId, setActivePresetId] = useState("");
   const filterRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     savePageSize(pageSize);
   }, [pageSize]);
+
+  useEffect(() => {
+    saveFilterPresets(filterPresets);
+  }, [filterPresets]);
 
   useEffect(() => {
     setPage(1);
@@ -114,11 +121,51 @@ export default function ResultsTable({ columns, rows }: Props) {
     filterRef.current?.focus();
   };
 
+  const saveFilterPreset = () => {
+    const name = presetName.trim();
+    if (!name) {
+      toast.error("Name this filter preset before saving it.");
+      return;
+    }
+    const existing = filterPresets.find((preset) => preset.name.trim().toLocaleLowerCase() === name.toLocaleLowerCase());
+    const now = Date.now();
+    const preset: ResultFilterPreset = {
+      id: existing?.id ?? (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `filter-${now}`),
+      name,
+      filter,
+      columnFilters,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    };
+    setFilterPresets((entries) => upsertFilterPreset(entries, preset));
+    setActivePresetId(preset.id);
+    toast.success(existing ? "Filter preset updated" : "Filter preset saved");
+  };
+
+  const applyFilterPreset = (id: string) => {
+    setActivePresetId(id);
+    const preset = filterPresets.find((entry) => entry.id === id);
+    if (!preset) return;
+    setPresetName(preset.name);
+    setFilter(preset.filter);
+    setColumnFilters(preset.columnFilters);
+    setShowColumnFilters(Object.keys(preset.columnFilters).length > 0);
+    toast.success(`Applied preset: ${preset.name}`);
+  };
+
+  const removeFilterPreset = () => {
+    if (!activePresetId) return;
+    setFilterPresets((entries) => deleteFilterPreset(entries, activePresetId));
+    setActivePresetId("");
+    setPresetName("");
+    toast.success("Filter preset removed");
+  };
+
   return (
     <div className="flex flex-col h-full">
-      <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-border/60 bg-primary/[0.025]">
-        <div className="text-xs text-muted-foreground font-mono whitespace-nowrap">
-          <span className="font-mono text-[15px] font-semibold tabular-nums text-primary">{rowCount.toLocaleString("en-US")}</span> row{rowCount === 1 ? "" : "s"}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 py-2 border-b border-border/70 bg-primary/[0.018]">
+        <div className="text-xs text-muted-foreground font-mono whitespace-nowrap border-l-2 border-primary pl-2">
+          <span className="font-mono text-[16px] font-bold tabular-nums text-primary">{rowCount.toLocaleString("en-US")}</span> row{rowCount === 1 ? "" : "s"}
           {rowCount > pageSize ? ` · page ${safePage.toLocaleString("en-US")} of ${totalPages.toLocaleString("en-US")}` : ""}
         </div>
         <div className="relative flex min-w-[11rem] flex-1 items-center">
@@ -163,7 +210,46 @@ export default function ResultsTable({ columns, rows }: Props) {
           <ListFilter className="h-3.5 w-3.5" aria-hidden="true" />
           Columns{columnFilterCount > 0 ? ` (${columnFilterCount})` : ""}
         </button>
-        <div className="flex items-center border-l border-border/70 shrink-0 divide-x divide-border/70">
+        <div className="flex min-w-0 items-center border-l border-border/70 opacity-80 hover:opacity-100 transition-opacity duration-150">
+          <label htmlFor="filter-preset-select" className="sr-only">Saved filter preset</label>
+          <select
+            id="filter-preset-select"
+            value={activePresetId}
+            onChange={(event) => applyFilterPreset(event.target.value)}
+            className="max-w-[8.5rem] bg-transparent border-0 border-b border-border px-1 py-1 text-[11px] font-mono text-muted-foreground focus:outline-none focus:border-primary"
+          >
+            <option value="">Filter presets</option>
+            {filterPresets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+          </select>
+          <label htmlFor="filter-preset-name" className="sr-only">Filter preset name</label>
+          <input
+            id="filter-preset-name"
+            value={presetName}
+            onChange={(event) => setPresetName(event.target.value)}
+            placeholder="Preset name"
+            maxLength={60}
+            className="hidden min-w-[6.5rem] bg-transparent border-0 border-b border-border px-1 py-1 text-[11px] font-mono text-foreground placeholder:text-muted-foreground/65 focus:outline-none focus:border-primary sm:block"
+          />
+          <button
+            type="button"
+            onClick={saveFilterPreset}
+            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-mono text-muted-foreground hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary/60 transition-colors duration-150"
+            title="Save the current global and column filters as a preset"
+          >
+            <BookmarkPlus className="h-3 w-3" aria-hidden="true" /><span className="hidden sm:inline">Save preset</span>
+          </button>
+          <button
+            type="button"
+            onClick={removeFilterPreset}
+            disabled={!activePresetId}
+            className="inline-flex items-center justify-center px-1.5 py-1 text-muted-foreground hover:text-destructive focus:outline-none focus:ring-1 focus:ring-primary/60 disabled:pointer-events-none disabled:opacity-35 transition-colors duration-150"
+            title="Delete the selected filter preset"
+            aria-label="Delete the selected filter preset"
+          >
+            <Trash2 className="h-3 w-3" aria-hidden="true" />
+          </button>
+        </div>
+        <div className="flex items-center border-l border-border/70 shrink-0 divide-x divide-border/70 opacity-75 hover:opacity-100 transition-opacity duration-150">
           <button
             type="button"
             onClick={() => {
@@ -222,11 +308,11 @@ export default function ResultsTable({ columns, rows }: Props) {
         </div>
       </div>
 
-      <div className="overflow-auto flex-1">
-        <table className="w-full text-[13px] border-collapse">
+      <div className="overflow-auto flex-1 bg-[linear-gradient(to_bottom,hsl(var(--primary)/0.018),transparent_5rem)]">
+        <table className="w-full text-[13px] leading-5 border-collapse">
           <thead className="sticky top-0 bg-secondary z-10">
             <tr>
-              <th className="text-left text-[10px] font-semibold uppercase tracking-widest text-muted-foreground px-3 py-2.5 border-b border-border/70 w-10">#</th>
+              <th className="text-left text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground px-3 py-2.5 border-b border-border/70 w-10">#</th>
               {columns.map((col, i) => (
                 <th
                   key={`${col}-${i}`}

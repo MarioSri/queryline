@@ -6,6 +6,8 @@
  * stale or edited browser value cannot disrupt the query console.
  */
 
+import type { ColumnFilters } from "./tableFilter";
+
 export interface QueryHistoryEntry {
   id: number;
   label: string;
@@ -31,8 +33,10 @@ export interface QueryWorkspace {
 const HISTORY_KEY = "queryline.history.v1";
 const PAGE_SIZE_KEY = "queryline.page-size.v1";
 const WORKSPACES_KEY = "queryline.workspaces.v1";
+const FILTER_PRESETS_KEY = "queryline.filter-presets.v1";
 const MAX_HISTORY = 50;
 const MAX_WORKSPACES = 25;
+const MAX_FILTER_PRESETS = 20;
 
 export function workspaceNameKey(name: string): string {
   return name.trim().replace(/\s+/g, " ").toLocaleLowerCase();
@@ -197,4 +201,164 @@ export function findDuplicateWorkspace(entries: QueryWorkspace[], name: string, 
 
 export function deleteWorkspace(entries: QueryWorkspace[], id: string): QueryWorkspace[] {
   return entries.filter((workspace) => workspace.id !== id);
+}
+
+export interface WorkspaceArchive {
+  format: "queryline-workspaces";
+  version: 1;
+  exportedAt: string;
+  workspaces: QueryWorkspace[];
+}
+
+export interface WorkspaceImportResult {
+  workspaces: QueryWorkspace[];
+  imported: number;
+  skipped: number;
+}
+
+function createImportedWorkspaceId(existingIds: Set<string>, sourceId: string): string {
+  let suffix = 1;
+  let id = `${sourceId}-imported`;
+  while (existingIds.has(id)) {
+    suffix += 1;
+    id = `${sourceId}-imported-${suffix}`;
+  }
+  return id;
+}
+
+export function serializeWorkspaceArchive(entries: QueryWorkspace[], exportedAt = new Date().toISOString()): string {
+  const archive: WorkspaceArchive = {
+    format: "queryline-workspaces",
+    version: 1,
+    exportedAt,
+    workspaces: parseWorkspaces(JSON.stringify(entries)),
+  };
+  return JSON.stringify(archive, null, 2);
+}
+
+export function parseWorkspaceArchive(value: string | null): QueryWorkspace[] | null {
+  if (!value) return null;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!parsed || typeof parsed !== "object") return null;
+    const archive = parsed as Record<string, unknown>;
+    if (archive.format !== "queryline-workspaces" || archive.version !== 1 || !Array.isArray(archive.workspaces)) return null;
+    return parseWorkspaces(JSON.stringify(archive.workspaces));
+  } catch {
+    return null;
+  }
+}
+
+export function mergeImportedWorkspaces(existing: QueryWorkspace[], incoming: QueryWorkspace[]): WorkspaceImportResult {
+  const next = uniqueWorkspaceNames(existing.filter(isWorkspace).map(normalizeWorkspace));
+  const names = new Set(next.map((workspace) => workspaceNameKey(workspace.name)));
+  const ids = new Set(next.map((workspace) => workspace.id));
+  let imported = 0;
+  let skipped = 0;
+
+  for (const candidate of incoming.filter(isWorkspace).map(normalizeWorkspace)) {
+    if (next.length >= MAX_WORKSPACES || names.has(workspaceNameKey(candidate.name))) {
+      skipped += 1;
+      continue;
+    }
+    const id = ids.has(candidate.id) ? createImportedWorkspaceId(ids, candidate.id) : candidate.id;
+    next.push({ ...candidate, id });
+    names.add(workspaceNameKey(candidate.name));
+    ids.add(id);
+    imported += 1;
+  }
+
+  return { workspaces: sortWorkspaces(next).slice(0, MAX_WORKSPACES), imported, skipped };
+}
+
+export interface ResultFilterPreset {
+  id: string;
+  name: string;
+  filter: string;
+  columnFilters: ColumnFilters;
+  createdAt: number;
+  updatedAt: number;
+}
+
+function normalizeColumnFilters(value: unknown): ColumnFilters {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([index, term]) => Number.isSafeInteger(Number(index)) && Number(index) >= 0 && typeof term === "string" && term.trim().length > 0 && term.length <= 120)
+      .map(([index, term]) => [Number(index), (term as string).trim()])
+  ) as ColumnFilters;
+}
+
+function isFilterPreset(value: unknown): value is ResultFilterPreset {
+  if (!value || typeof value !== "object") return false;
+  const preset = value as Record<string, unknown>;
+  return (
+    typeof preset.id === "string" && preset.id.length > 0 &&
+    typeof preset.name === "string" && preset.name.trim().length > 0 && preset.name.length <= 60 &&
+    typeof preset.filter === "string" && preset.filter.length <= 250 &&
+    typeof preset.createdAt === "number" && Number.isFinite(preset.createdAt) &&
+    typeof preset.updatedAt === "number" && Number.isFinite(preset.updatedAt) &&
+    typeof preset.columnFilters === "object" && !Array.isArray(preset.columnFilters)
+  );
+}
+
+function normalizeFilterPreset(preset: ResultFilterPreset): ResultFilterPreset {
+  return {
+    ...preset,
+    name: preset.name.trim().slice(0, 60),
+    filter: preset.filter.trim().slice(0, 250),
+    columnFilters: normalizeColumnFilters(preset.columnFilters),
+  };
+}
+
+function sortFilterPresets(entries: ResultFilterPreset[]): ResultFilterPreset[] {
+  return [...entries].sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+function uniqueFilterPresetNames(entries: ResultFilterPreset[]): ResultFilterPreset[] {
+  const seen = new Set<string>();
+  return sortFilterPresets(entries).filter((preset) => {
+    const key = workspaceNameKey(preset.name);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export function parseFilterPresets(value: string | null): ResultFilterPreset[] {
+  if (!value) return [];
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+    return uniqueFilterPresetNames(parsed.filter(isFilterPreset).map(normalizeFilterPreset)).slice(0, MAX_FILTER_PRESETS);
+  } catch {
+    return [];
+  }
+}
+
+export function loadFilterPresets(): ResultFilterPreset[] {
+  try {
+    return parseFilterPresets(storage()?.getItem(FILTER_PRESETS_KEY) ?? null);
+  } catch {
+    return [];
+  }
+}
+
+export function saveFilterPresets(entries: ResultFilterPreset[]): void {
+  try {
+    storage()?.setItem(FILTER_PRESETS_KEY, JSON.stringify(uniqueFilterPresetNames(entries.filter(isFilterPreset).map(normalizeFilterPreset)).slice(0, MAX_FILTER_PRESETS)));
+  } catch {
+    // Filter presets are optional convenience state; filtering remains available in memory.
+  }
+}
+
+export function upsertFilterPreset(entries: ResultFilterPreset[], preset: ResultFilterPreset): ResultFilterPreset[] {
+  if (!isFilterPreset(preset)) return entries;
+  const duplicate = entries.find((entry) => entry.id !== preset.id && workspaceNameKey(entry.name) === workspaceNameKey(preset.name));
+  if (duplicate) return entries;
+  return uniqueFilterPresetNames([normalizeFilterPreset(preset), ...entries.filter((entry) => entry.id !== preset.id)]).slice(0, MAX_FILTER_PRESETS);
+}
+
+export function deleteFilterPreset(entries: ResultFilterPreset[], id: string): ResultFilterPreset[] {
+  return entries.filter((preset) => preset.id !== id);
 }

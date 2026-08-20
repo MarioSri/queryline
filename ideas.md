@@ -46,3 +46,6 @@ Probability: 0.05
 - The small teal square is a recurring execution mark for active section labels, metrics, selected/pinned material, and the ledger heading.
 - Preserve the user-provided logo artwork as a silhouette, but apply a direct teal color transform in persistent chrome so its source colors never introduce a competing accent.
 - Favor a larger result pane and its tabular timing, counts, and values over the draft and auxiliary rails; secondary exports and workspace actions remain text-first hairline controls.
+- Teal is reserved for execution meaning: the run control, active and pinned records, key timing and row metrics, and the square execution marker. Secondary controls remain ink-neutral until interaction.
+- The results ledger uses the strongest teal rule, editorial heading treatment, tabular emphasis, and more visual area than the supporting draft and utility rails.
+- Editorial identity is carried by Fraunces ledger headings, precise hairline rules, and the repeating teal execution tick rather than dashboard-card styling.

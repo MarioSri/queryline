@@ -25,11 +25,14 @@ WebAssembly, and no SQL library.
 - **Browser-local workspaces.** `client/src/lib/preferences.ts` stores named
   SQL drafts in browser storage. A workspace can be saved, selected, renamed,
   or deleted without sending its query anywhere; duplicate names are rejected
-  case-insensitively, while page size, execution history, pinned runs, and
-  individual entry deletion persist alongside it.
+  case-insensitively. The complete shelf can be exported as a versioned JSON
+  archive or merged back from a validated archive, while page size, execution
+  history, pinned runs, and individual entry deletion persist alongside it.
 - **Read-only share links.** `client/src/lib/shareLink.ts` encodes one trimmed
   SQL draft in the `q` query parameter, restores it as a non-mutable editor,
-  and supports making a local editable copy. No query text is stored remotely.
+  and supports making a local editable copy. It displays the link length before
+  copy and warns when a long browser URL may be rejected by another tool. No
+  query text is stored remotely.
 - **Deferred interface code.** The engine, editor, and result grid load behind
   explicit lazy boundaries; Vite also isolates the icon and UI dependency
   groups from the initial application chunk.
@@ -58,9 +61,10 @@ fast even when a query returns tens of thousands of rows.
 - **Results table** with CSV, JSON, and clipboard exports for the active page;
   pagination (25/50/100/500 rows per page); a sticky header; numeric
   alignment; a keyboard-accessible all-cell text filter; and optional,
-  composable per-column filters. Escape clears the focused filter, and a
-  dedicated action clears all active filters. Only the current page is
-  rendered, so a 50,000-row result set never touches the DOM in bulk.
+  composable per-column filters. Named browser-local presets save and restore
+  the global plus per-column criteria together. Escape clears the focused
+  filter, and a dedicated action clears all active filters. Only the current
+  page is rendered, so a 50,000-row result set never touches the DOM in bulk.
 - **Schema sidebar** listing every table and column with row counts, and six
   sample queries you can load into the editor in one click.
 - **Execution ledger**: recent runs persist locally, can be restored into the
@@ -68,12 +72,15 @@ fast even when a query returns tens of thousands of rows.
 - **Named workspaces**: save a draft under a deliberate name, restore it via
   the workspace selector, rename it by editing its name and saving, or remove
   it without affecting the execution ledger. Duplicate names are prevented
-  regardless of casing or surrounding whitespace.
+  regardless of casing or surrounding whitespace. Export the workspace shelf
+  as a portable, versioned JSON file; importing validates its shape, merges
+  valid entries, and skips duplicate names rather than overwriting local work.
 - **Read-only links**: copy a compact URL for a SQL draft, open it in any
   browser to execute and inspect without mutating the draft, then create a
   local editable copy when experimentation is needed. Links use the browser
   address bar only; no SQL is uploaded or persisted outside the recipient's
-  URL history.
+  URL history. The console labels the generated character count and warns
+  when a long URL may be unsuitable for another tool.
 - **In-product SQL reference**: the schema rail includes a compact, collapsible
   reminder of the verified statement shapes, joins, clauses, functions, and
   intentional limitations described below.
@@ -186,14 +193,14 @@ client/src/
 ├── lib/engine.ts   # tokenizer, parser, executor (the SQL engine)
 ├── lib/catalog.ts  # lightweight schema and sample-query UI metadata
 ├── lib/csv.ts      # current-page CSV, JSON, and clipboard exports
-├── lib/preferences.ts # local page-size, ledger, and workspace state
+├── lib/preferences.ts # local page-size, ledger, workspaces, presets, archives
 ├── lib/shareLink.ts   # URL-safe, read-only query draft links
 ├── lib/tableFilter.ts # global and composable column-specific filtering
 ├── lib/seed.ts     # CREATE TABLE + INSERT statements for the dataset
 ├── pages/Home.tsx  # console layout and lazy UI/engine boundaries
 └── components/
     ├── QueryEditor.tsx    # editor with Ctrl+Enter, Tab indent, workspace shelf
-    ├── ResultsTable.tsx   # paginated, memoized result grid with accessible filters
+    ├── ResultsTable.tsx   # paginated, memoized grid with accessible filters/presets
     ├── SchemaSidebar.tsx  # tables, columns, row counts, sample queries
     └── HistoryRail.tsx    # persistent runs, pin/delete, click to restore
     └── WorkspaceShelf.tsx # local workspace selector and lifecycle controls
@@ -224,7 +231,7 @@ Bug reports and improvements are welcome through issues and pull requests.
 The regression contract is split across `client/src/lib/engine.test.ts`,
 `client/src/lib/csv.test.ts`, `client/src/lib/preferences.test.ts`,
 `client/src/lib/tableFilter.test.ts`, and `client/src/lib/shareLink.test.ts`;
-keep all 34 tests green.
+keep all 37 tests green.
 
 ## License
 
